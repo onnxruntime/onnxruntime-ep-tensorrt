@@ -5,8 +5,7 @@
 cmake_minimum_required(VERSION 3.26)
 project(TensorRTEp VERSION 1.0)
 set(CMAKE_CXX_STANDARD 17)
-set(plugin_ep_common_dir ${CMAKE_SOURCE_DIR}/../common)
-include(${plugin_ep_common_dir}/cmake/onnxruntime_library_utils.cmake)
+include(${CMAKE_SOURCE_DIR}/cmake/onnxruntime_library_utils.cmake)
 
 enable_language(CUDA) # via nvcc to get the CUDA tool kit
 file(TO_CMAKE_PATH "/usr/local/cuda" CUDAToolkit_ROOT)

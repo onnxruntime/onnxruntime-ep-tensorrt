@@ -9,6 +9,7 @@ This TensorRT plugin EP can be built on Linux and Windows with "Debug" and "Rele
 - `CMakeLists.txt`: Build configuration for the TensorRT plugin EP.
 - `src`: Contains source code for the TensorRT plugin EP.
 - `python`: Contains example code for setting up and using a Python package.
+- `csharp`: Contains example code for setting up and using a C# NuGet package.
 
 ## Build Instructions
 ### On Windows
@@ -55,4 +56,5 @@ Please use `onnxruntime_perf_test`
 ```bash
 --plugin_ep_libs "TensorRTEp|C:\repos\onnxruntime-ep-tensorrt\build\Debug\TensorRTEp.dll" --plugin_eps TensorRTEp -r 1 C:\path\to\model
 ```
+
 

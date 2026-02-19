@@ -1,0 +1,8 @@
+/.vs/
+/local_feed/
+/Microsoft.ML.OnnxRuntime.EP.TensorRT/runtimes/**/native/*.dll
+*.nupkg
+*.snupkg
+**/packages/*
+!**/packages/build/
+**/bin/*

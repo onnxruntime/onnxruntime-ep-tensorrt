@@ -9,7 +9,7 @@
 
 ### Build the native plugin EP library
 
-Follow instructions [here](../readme.md#Build-TRT-Plugin-EP) to build the native library.
+Follow instructions [here](../README.md#build-instructions) to build the native library.
 
 ### Build the Python package
 

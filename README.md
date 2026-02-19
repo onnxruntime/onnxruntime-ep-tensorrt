@@ -10,7 +10,7 @@ This TensorRT plugin EP can be built on Linux and Windows with "Debug" and "Rele
 - `src`: Contains source code for the TensorRT plugin EP.
 - `python`: Contains example code for setting up and using a Python package.
 
-## Build TRT Plugin EP
+## Build Instructions
 ### On Windows
 ```bash
 mkdir build;cd build
@@ -50,8 +50,9 @@ cmake -S ../ -B ./ -DCMAKE_BUILD_TYPE=Debug -DTENSORRT_HOME=/home/to/trt/ -DORT_
 cmake --build ./ --config Debug
 ````
 
-## Run the plugin TRT EP
+## Usage
 Please use `onnxruntime_perf_test`
 ```bash
 --plugin_ep_libs "TensorRTEp|C:\repos\onnxruntime-ep-tensorrt\build\Debug\TensorRTEp.dll" --plugin_eps TensorRTEp -r 1 C:\path\to\model
 ```
+

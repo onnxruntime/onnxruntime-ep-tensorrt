@@ -10,7 +10,8 @@ This TensorRT plugin EP can be built on Linux and Windows with "Debug" and "Rele
 - `src`: Contains source code for the TensorRT plugin EP.
 - `python`: Contains example code for setting up and using a Python package.
 
-## Build TRT Plugin EP on Windows
+## Build TRT Plugin EP
+### On Windows
 ```bash
 mkdir build;cd build
 ```
@@ -38,7 +39,7 @@ C:/folder/to/ort
 ```
 
  
-## Build TRT Plugin EP on Linux
+### On Linux
 ```bash
 mkdir build;cd build
 ```

@@ -1,11 +1,18 @@
-﻿# Plugin TensorRT Execution Provider
-This plugin TensorRT EP is originally migrated from the provider-bridge [TensorRT EP](https://github.com/microsoft/onnxruntime/tree/main/onnxruntime/core/providers/tensorrt) and implements the required ORT EP interfaces (including `OrtEpFactory`, `OrtEp`, `OrtNodeComputeInfo`, `OrtDataTransferImpl`, etc.) to interact with ONNX Runtime through the EP ABI introduced in ORT 1.23.0.
+# TensorRT Plugin Execution Provider
+This TensorRT plugin EP is originally migrated from the provider-bridge [TensorRT EP](https://github.com/microsoft/onnxruntime/tree/main/onnxruntime/core/providers/tensorrt) and implements the required ORT EP interfaces (including `OrtEpFactory`, `OrtEp`, `OrtNodeComputeInfo`, `OrtDataTransferImpl`, etc.) to interact with ONNX Runtime through the EP ABI introduced in ORT 1.23.0.
 
-Plugin TensorRT EP should be built as a shared library and does not need to be built together with ONNX Runtime. It only needs to link against the ONNX Runtime shared library, i.e., `onnxruntime.dll` or `libonnxruntime.so`.
+TensorRT plugin EP should be built as a shared library and does not need to be built together with ONNX Runtime. It only needs to link against the ONNX Runtime shared library, i.e., `onnxruntime.dll` or `libonnxruntime.so`.
 
-This plugin TensorRT EP can be built on Linux and Windows with "Debug" and "Release" mode.
+This TensorRT plugin EP can be built on Linux and Windows with "Debug" and "Release" mode.
 
-## Build plugin TRT EP on Windows
+## Contents
+- `CMakeLists.txt`: Build configuration for the TensorRT plugin EP.
+- `src`: Contains source code for the TensorRT plugin EP.
+- `python`: Contains example code for setting up and using a Python package.
+- `csharp`: Contains example code for setting up and using a C# NuGet package.
+
+## Build Instructions
+### On Windows
 ```bash
 mkdir build;cd build
 ```
@@ -33,7 +40,7 @@ C:/folder/to/ort
 ```
 
  
-## Build plugin TRT EP on Linux
+### On Linux
 ```bash
 mkdir build;cd build
 ```
@@ -44,8 +51,10 @@ cmake -S ../ -B ./ -DCMAKE_BUILD_TYPE=Debug -DTENSORRT_HOME=/home/to/trt/ -DORT_
 cmake --build ./ --config Debug
 ````
 
-## Run the plugin TRT EP
+## Usage
 Please use `onnxruntime_perf_test`
 ```bash
 --plugin_ep_libs "TensorRTEp|C:\repos\onnxruntime-ep-tensorrt\build\Debug\TensorRTEp.dll" --plugin_eps TensorRTEp -r 1 C:\path\to\model
 ```
+
+

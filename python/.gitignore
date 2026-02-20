@@ -1,0 +1,5 @@
+/build
+/dist
+/onnxruntime_ep_tensorrt.egg-info
+/onnxruntime_ep_tensorrt/tensorrt_plugin_ep.dll
+/onnxruntime_ep_tensorrt/libtensorrt_plugin_ep.so

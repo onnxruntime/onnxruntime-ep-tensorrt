@@ -1,7 +1,5 @@
 #pragma once
 
-#include "onnxruntime_cxx_api.h"
-
 #include "ep_utils.h"
 #include "flatbuffers/idl.h"
 #include "ort_trt_int8_cal_table.fbs.h"

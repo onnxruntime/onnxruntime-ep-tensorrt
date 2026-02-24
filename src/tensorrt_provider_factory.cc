@@ -1,6 +1,6 @@
-#include "onnxruntime_cxx_api.h"
 #include "tensorrt_provider_factory.h"
 #include "tensorrt_execution_provider.h"
+#include "tensorrt_execution_provider_kernel_registration.h"
 #include "cuda_allocator.h"
 
 #include <gsl/gsl>
@@ -270,6 +270,31 @@ bool ORT_API_CALL TensorrtExecutionProviderFactory::IsStreamAwareImpl(const OrtE
   return true;
 }
 
+OrtStatus* TensorrtExecutionProviderFactory::GetKernelRegistryForEp(TensorrtExecutionProvider& ep,
+                                                                    const OrtKernelRegistry** out_kernel_registry) {
+  *out_kernel_registry = nullptr;
+
+  if (GetNumKernels() == 0) {
+    return nullptr;
+  }
+
+  if (kernel_registry_ == nullptr) {
+    // Optional state that is provided to kernels on creation (can be null).
+    // We pass the OrtDataTransferImpl created by this factory to allow kernels to copy data between devices.
+    void* op_kernel_state = static_cast<OrtDataTransferImpl*>(data_transfer_impl.get());
+    const char* ep_name = ep.GetName(static_cast<const OrtEp*>(&ep));
+
+    // This statement creates the kernel registry and caches it in the OrtEpFactory instance.
+    // We assume that all EPs created by this factory can use the same kernel registry. This may not be the
+    // case in a more complex OrtEpFactory that can create EP instances that are each configured for different
+    // hardware devices. In such a scenario, a different kernel registry may be created for each EP configuration.
+    RETURN_IF_ERROR(CreateKernelRegistry(ep_name, op_kernel_state, &kernel_registry_));
+  }
+
+  *out_kernel_registry = kernel_registry_;
+  return nullptr;
+}
+
 }  // namespace trt_ep
 
 #define EXPORT_SYMBOL
@@ -284,6 +309,9 @@ EXPORT_SYMBOL OrtStatus* CreateEpFactories(const char* registration_name, const 
   const OrtApi* ort_api = ort_api_base->GetApi(ORT_API_VERSION);
   const OrtEpApi* ort_ep_api = ort_api->GetEpApi();
   const OrtModelEditorApi* model_editor_api = ort_api->GetModelEditorApi();
+
+  // Manual init for the C++ API
+  Ort::InitApi(ort_api);
 
   // Factory could use registration_name or define its own EP name.
   std::unique_ptr<OrtEpFactory> factory = std::make_unique<trt_ep::TensorrtExecutionProviderFactory>(registration_name, *default_logger, ApiPtrs{*ort_api, *ort_ep_api, *model_editor_api});

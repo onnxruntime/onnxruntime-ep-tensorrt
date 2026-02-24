@@ -1,15 +1,10 @@
 #pragma once
 
+#define ORT_API_MANUAL_INIT
 #include "onnxruntime_cxx_api.h"
+#undef ORT_API_MANUAL_INIT
 
-// #include "flatbuffers/idl.h"
-// #include "ort_trt_int8_cal_table.fbs.h"
 #include "make_string.h"
-// #include "core/providers/cuda/cuda_pch.h"
-// #include "core/common/path_string.h"
-// #include "core/framework/murmurhash3.h"
-
-// #include"nv_includes.h"
 #include "gsl/narrow"
 
 #include <fstream>

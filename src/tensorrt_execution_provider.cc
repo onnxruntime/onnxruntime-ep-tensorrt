@@ -6,8 +6,6 @@
 #include <numeric>
 #include <cuda_runtime.h>
 
-#include "onnxruntime_cxx_api.h"
-
 #define ORT_EP_UTILS_ORT_GRAPH_TO_PROTO_IMPL
 #include "ort_graph_to_proto.h"
 
@@ -2330,6 +2328,19 @@ OrtStatus* ORT_API_CALL TensorrtExecutionProvider::CreateSyncStreamForDeviceImpl
   return nullptr;
 }
 
+/*static*/
+OrtStatus* ORT_API_CALL TensorrtExecutionProvider::GetKernelRegistryImpl(
+    _In_ OrtEp* this_ptr,
+    _Outptr_result_maybenull_ const OrtKernelRegistry** kernel_registry) noexcept {
+  TensorrtExecutionProvider* ep = static_cast<TensorrtExecutionProvider*>(this_ptr);
+
+  *kernel_registry = nullptr;
+
+  // Get the cached kernel registry from parent factory to avoid recreating the kernel registry for every EP instance.
+  RETURN_IF_ERROR(ep->factory_.GetKernelRegistryForEp(*ep, kernel_registry));
+  return nullptr;
+}
+
 /**
  * Refit the weight-stripped engine
  */
@@ -2598,6 +2609,7 @@ TensorrtExecutionProvider::TensorrtExecutionProvider(TensorrtExecutionProviderFa
   Compile = CompileImpl;
   ReleaseNodeComputeInfos = ReleaseNodeComputeInfosImpl;
   CreateSyncStreamForDevice = CreateSyncStreamForDeviceImpl;
+  GetKernelRegistry = GetKernelRegistryImpl;
 
   // Initialize the execution provider.
 
@@ -3978,4 +3990,5 @@ void TRTEpEpContextNodeComputeInfo::ReleaseStateImpl(OrtNodeComputeInfo* this_pt
   (void)trt_ep_compute_state;
   // Do nothing for here.
 }
+
 }  // namespace trt_ep

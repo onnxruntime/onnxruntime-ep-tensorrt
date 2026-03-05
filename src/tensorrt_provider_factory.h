@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ep_utils.h"
+#include "utils/ep_utils.h"
 #include "tensorrt_execution_provider_data_transfer.h"
 #include "cuda_allocator.h"
 

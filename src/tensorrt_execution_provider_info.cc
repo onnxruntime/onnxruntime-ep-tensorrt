@@ -4,9 +4,9 @@
 #include <cuda_runtime.h>  //#incldue "core/providers/cuda/cuda_pch.h"
 
 #include "tensorrt_execution_provider_info.h"
-#include "provider_options_utils.h"
-#include "cuda/cuda_common.h"
-#include "ep_utils.h"
+#include "utils/provider_options_utils.h"
+#include "utils/cuda/cuda_common.h"
+#include "utils/ep_utils.h"
 
 namespace tensorrt {
 namespace provider_option_names {

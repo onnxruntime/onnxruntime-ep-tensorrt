@@ -1,9 +1,9 @@
 #pragma once
 
-#include "ep_utils.h"
+#include "utils/ep_utils.h"
 #include "flatbuffers/idl.h"
 #include "ort_trt_int8_cal_table.fbs.h"
-#include "make_string.h"
+#include "utils/make_string.h"
 
 #include "nv_includes.h"
 #include "gsl/narrow"

@@ -5,8 +5,8 @@
 #include <fstream>
 #include <filesystem>
 
-#include "ep_utils.h"
-#include "path_string.h"
+#include "utils/ep_utils.h"
+#include "utils/path_string.h"
 #include "onnx_ctx_model_helper.h"
 #include "onnx/onnx_pb.h"
 

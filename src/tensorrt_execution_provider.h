@@ -271,9 +271,9 @@ struct TensorrtExecutionProvider : public OrtEp, public ApiPtrs {
                                                                _In_ const OrtMemoryDevice* memory_device,
                                                                _Outptr_ OrtSyncStreamImpl** stream) noexcept;
 
-  static OrtStatus* ORT_API_CALL TensorrtExecutionProvider::GetKernelRegistryImpl(
-      _In_ OrtEp* this_ptr,
-      _Outptr_result_maybenull_ const OrtKernelRegistry** kernel_registry) noexcept;
+  static OrtStatus* ORT_API_CALL GetKernelRegistryImpl(
+    _In_ OrtEp* this_ptr,
+    _Outptr_result_maybenull_ const OrtKernelRegistry** kernel_registry) noexcept;
 
   mutable TensorrtExecutionProviderInfo info_;
   int max_partition_iterations_ = 1000;

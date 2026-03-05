@@ -124,26 +124,30 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(flatbuffers)
 
-set(TRT_LIBS
-  ${TENSORRT_HOME}/lib/${CMAKE_IMPORT_LIBRARY_PREFIX}nvinfer$<$<BOOL:WIN32>:_10>${CMAKE_IMPORT_LIBRARY_SUFFIX}
-  ${TENSORRT_HOME}/lib/${CMAKE_IMPORT_LIBRARY_PREFIX}nvinfer_plugin$<$<BOOL:WIN32>:_10>${CMAKE_IMPORT_LIBRARY_SUFFIX}
-  ${TENSORRT_HOME}/lib/${CMAKE_IMPORT_LIBRARY_PREFIX}nvonnxparser$<$<BOOL:WIN32>:_10>${CMAKE_IMPORT_LIBRARY_SUFFIX}
-)
-
 if(WIN32) # Windows
-  set(ORT_LIB "${ORT_LIBRARY_DIR}/onnxruntime.lib")
-  set(ORTTensorRTEp_LINK_FLAG "-DEF:${CMAKE_SOURCE_DIR}/src/tensorrt_execution_provider.def")
-else() # Linux
-  set(ORT_LIB "${ORT_LIBRARY_DIR}/lib/libonnxruntime.so")
+  set(TRT_LIBS
+    ${TENSORRT_HOME}/lib/nvinfer_10.lib
+    ${TENSORRT_HOME}/lib/nvinfer_plugin_10.lib
+    ${TENSORRT_HOME}/lib/nvonnxparser_10.lib
+  )
+  set(ORT_LIBS ${ORT_LIBRARY_DIR}/onnxruntime.lib)
+
+  set_property(
+    TARGET ORTTensorRTEp
+    APPEND_STRING PROPERTY
+    LINK_FLAGS "-DEF:${CMAKE_SOURCE_DIR}/src/tensorrt_execution_provider.def"
+  )
+else()
+  set(TRT_LIBS
+    ${TENSORRT_HOME}/libnvinfer.so.10
+    ${TENSORRT_HOME}/libnvinfer_plugin.so.10
+    ${TENSORRT_HOME}/libnvonnxparser.so.10
+  )
+  set(ORT_LIBS ${ORT_LIBRARY_DIR}/libonnxruntime.so)
 endif()
 
-MESSAGE(STATUS "Looking for following dependencies ...")
-MESSAGE(STATUS "ORT lib  : ${ORT_LIB}")
-MESSAGE(STATUS "TRT libs : ${TRT_LIBS}")
-
-set_property(
-  TARGET ORTTensorRTEp APPEND_STRING PROPERTY LINK_FLAGS ${ORTTensorRTEp_LINK_FLAG}
-)
+message(STATUS "ORT libs: ${ORT_LIBS}")
+message(STATUS "TRT libs: ${TRT_LIBS}")
 
 target_include_directories(ORTTensorRTEp PRIVATE
   $<BUILD_INTERFACE:${ORT_INCLUDE_DIR}>
@@ -158,7 +162,7 @@ target_link_libraries(ORTTensorRTEp PRIVATE
   onnx
   GSL
   flatbuffers
-  ${ORT_LIB}
+  ${ORT_LIBS}
   ${TRT_LIBS}
   CUDA::cudart
 )

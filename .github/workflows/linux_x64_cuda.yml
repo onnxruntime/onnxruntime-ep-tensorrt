@@ -1,0 +1,118 @@
+name: "Linux x64 CUDA"
+description: "Linux x64 CUDA GHA workflow to build TensorRTEp"
+
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+
+jobs:
+  build-image:
+    strategy:
+      fail-fast: false
+      matrix:
+        cuda_version: ['12.9', '13.0']
+        trt_version: ['10.14.1.48']
+
+    runs-on: [
+      "self-hosted",
+      "1ES.Pool=onnxruntime-ep-Ubuntu2404-AMD-CPU",
+      "JobId=linux-tensorrtep-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
+    ]
+    name: Build Image CUDA${{ matrix.cuda_version }} TRT${{ matrix.trt_version }}
+
+    environment: Linux_x64
+    env:
+      AZCOPY_AUTO_LOGIN_TYPE: ${{ vars.AZCOPY_AUTO_LOGIN_TYPE }}
+      AZCOPY_MSI_CLIENT_ID: ${{ vars.AZCOPY_MSI_CLIENT_ID }}
+      CMAKE_CUDA_ARCHITECTURES: 86
+    outputs:
+      full-image-name: ${{ steps.build_docker_image_step.outputs.full-image-name }}
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v6
+      with:
+        sparse-checkout: .github
+        sparse-checkout-cone-mode: false
+
+    - name: Build Docker Image
+      uses: microsoft/onnxruntime-github-actions/build-docker-image@v0.0.9
+      id: build_docker_image_step
+      with:
+        dockerfile: ${{ github.workspace }}/.github/docker/Dockerfile.ubuntu_2404_cuda
+        image-name: ghcr.io/onnxruntime/onnxruntime-ep-tensorrt/ubuntu_2404_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version}}
+        build-args: 'BASE_IMAGE=nvidia/cuda:${{ matrix.cuda_version }}.1-cudnn-devel-ubuntu24.04 TRT_VERSION=${{ matrix.trt_version}}-1+cuda${{ matrix.cuda_version }} CMAKE_CUDA_ARCHITECTURES=${{ env.CMAKE_CUDA_ARCHITECTURES }} --network=host'
+        pull: true
+        push: true
+        azure-container-registry-name: onnxruntimebuildcache
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Pass token to action
+
+
+  build-source:
+    strategy:
+      fail-fast: false
+      matrix:
+        config: [Debug, RelWithDebInfo]
+        cuda_version: ['12.9', '13.0']
+        trt_version: ['10.14.1.48']
+
+    runs-on: [
+      "self-hosted",
+      "1ES.Pool=onnxruntime-ep-Ubuntu2404-AMD-CPU",
+      "JobId=linux-tensorrtep-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
+    ]
+    needs: build-image
+    name: Build Source CUDA${{ matrix.cuda_version }} TRT${{ matrix.trt_version }}
+    container: ${{ needs.build-image.outputs.full-image-name }}
+    environment: Linux_x64
+    env:
+      AZCOPY_AUTO_LOGIN_TYPE: ${{ vars.AZCOPY_AUTO_LOGIN_TYPE }}
+      AZCOPY_MSI_CLIENT_ID: ${{ vars.AZCOPY_MSI_CLIENT_ID }}
+      ARTIFACT_NAME: Linux_x64_${{ matrix.config }}_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}
+      PYTHON_VERSION: "3.x"
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v6
+
+    - name: Run the build
+      run: |
+        env
+        which cmake && cmake --version
+        which ninja && ninja --version
+        which $CC && $CC --version
+        which $CXX && $CXX --version
+        where python && python --version
+
+        cmake                                                       \
+            -G Ninja                                                \
+            -DCMAKE_BUILD_TYPE=${{ matrix.config }}                 \
+            -DCMAKE_INSTALL_PREFIX=out/${{ env.ARTIFACT_NAME }}     \
+            -DCMAKE_CUDA_ARCHITECTURES=${CMAKE_CUDA_ARCHITECTURES}  \
+            -DCMAKE_CUDA_COMPILER=${CUDA_HOME}/bin/nvcc             \
+            -DTENSORRT_HOME=${TRT_HOME}                             \
+            -S . -B out/build
+        cmake --build out/build -j `nproc`
+        cmake --install out/build
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ env.ARTIFACT_NAME }}
+        path: out/${{ env.ARTIFACT_NAME }}

@@ -27,7 +27,7 @@ OrtStatus* MemcpyKernelBase::CreateImpl(const OrtKernelInfo* info, void* state,
 }
 
 template <typename T>
-static void MemcpyKernelBase::ReleaseImpl(OrtKernelImpl* this_ptr) noexcept {
+void MemcpyKernelBase::ReleaseImpl(OrtKernelImpl* this_ptr) noexcept {
   delete static_cast<T*>(this_ptr);
 }
 

@@ -19,7 +19,7 @@ on:
 
 env:
   PYTHON_VERSION: "3.x"
-  CMAKE_CUDA_ARCHITECTURES: 80
+  CMAKE_CUDA_ARCHITECTURES: 86
 
 
 jobs:
@@ -27,11 +27,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
-        config: [debug, release]
+        config: [Debug] # RelWithDebInfo
 
-    runs-on: ${{ matrix.os }}
-    name: ${{ matrix.os }}-${{ matrix.config }}
+    runs-on: [
+      "self-hosted",
+      "1ES.Pool=onnxruntime-ep-github-Win",
+      "JobId=windows-tensorrt-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
+    ]
+    name: Windows-${{ matrix.config }}
 
     steps:
     - name: Setup environment (Linux)
@@ -39,12 +42,9 @@ jobs:
       run: |
         sudo apt install -y \
           g++-13            \
-          build-essentials  \
+          build-essential   \
           cmake             \
           ninja-build
-
-    - name: Checkout Code
-      uses: actions/checkout@v6
 
     - name: Setup python
       uses: actions/setup-python@v6
@@ -53,3 +53,86 @@ jobs:
 
     - name: Setup python environment
       run: python -m pip install tensorrt
+
+    - name: Checkout Code
+      uses: actions/checkout@v6
+
+    - name: Download CUDA SDK v12.8
+      shell: pwsh
+      run: |
+        azcopy.exe cp --recursive "https://lotusscus.blob.core.windows.net/models/cuda_sdk/v12.8" ${{ runner.temp }}
+        dir ${{ runner.temp }}
+
+    - name: Download TensorRT-10.14.1.48.Windows.win10.cuda-12.9
+      shell: pwsh
+      run: |
+        azcopy.exe cp --recursive "https://lotusscus.blob.core.windows.net/models/local/TensorRT-10.14.1.48.Windows.win10.cuda-12.9" ${{ runner.temp }}
+        dir ${{ runner.temp }}
+
+    - name: Build on Linux
+      if: runner.os == 'Linux'
+      shell: bash
+      env:
+        CC: gcc-13
+        CXX: g++-13
+      run: |
+        env
+        which cmake && cmake --version
+        which ninja && ninja --version
+        which $CC && $CC --version
+        which $CXX && $CXX --version
+        which python && python --version
+
+        if [[ "${{ matrix.config}}" == "debug" ]]; then
+          cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX=out/install -S . -B out/build
+        else
+          cmake -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_INSTALL_PREFIX=out/install -S . -B out/build
+        fi
+
+        cmake --build out/build -j `nproc`
+        cmake --install out/build
+
+    - name: Build on Windows
+      if: runner.os == 'Windows'
+      shell: cmd
+      env:
+        CC: cl
+        CXX: cl
+      run: |
+        call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+        if %errorlevel% neq 0 exit /b %errorlevel%
+
+        set
+        where cmake && cmake --version
+        where ninja && ninja --version
+        where %CC% && %CC%
+        where %CXX% && %CXX%
+        where python && python --version
+
+        cmake -G Ninja ^
+          -DCMAKE_BUILD_TYPE=${{ matrix.config}} ^
+          -DCMAKE_INSTALL_PREFIX=out/install ^
+          -DCMAKE_CUDA_COMPILER=${{ runner.temp }}\v12.8\bin\nvcc
+          -DCMAKE_CUDA_ARCHITECTURES=${{ env.CMAKE_CUDA_ARCHITECTURES }} ^
+          -DTENSORRT_HOME${{ runner.temp }}\TensorRT-10.14.1.48.Windows.win10.cuda-12.9 ^
+          -S . -B out/build
+        if %errorlevel% neq 0 exit /b %errorlevel%
+
+        cmake --build out/build -j %NUMBER_OF_PROCESSORS%
+        if %errorlevel% neq 0 exit /b %errorlevel%
+        cmake --install out/build
+
+    - name: Build compressed artifacts
+      if: always()
+      shell: bash
+      run: |
+        cd out
+        mv install build-artifacts
+        tar czfp build-artifacts.tar.gz build-artifacts
+
+    - name: Upload artifacts
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: build-artifacts
+        path: out/build-artifacts.tar.gz

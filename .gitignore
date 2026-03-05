@@ -1,0 +1,4 @@
+.vscode
+build
+out
+__pycache__

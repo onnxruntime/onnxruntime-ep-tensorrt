@@ -43,11 +43,11 @@ jobs:
       ARTIFACT_NAME: Windows_x64_${{ matrix.config }}
 
     steps:
-    - name: Setup python
-      uses: actions/setup-python@v6
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
-        cache: 'pip'
+    # - name: Setup python
+    #   uses: actions/setup-python@v6
+    #   with:
+    #     python-version: ${{ env.PYTHON_VERSION }}
+    #     cache: 'pip'
 
     # - name: Setup python environment
     #   run: python -m pip install tensorrt
@@ -141,11 +141,11 @@ jobs:
           cmake             \
           ninja-build
 
-    - name: Setup python
-      uses: actions/setup-python@v6
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
-        cache: 'pip'
+    # - name: Setup python
+    #   uses: actions/setup-python@v6
+    #   with:
+    #     python-version: ${{ env.PYTHON_VERSION }}
+    #     cache: 'pip'
 
     # - name: Setup python environment
     #   run: python -m pip install tensorrt

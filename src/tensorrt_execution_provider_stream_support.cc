@@ -5,8 +5,8 @@
 #include "tensorrt_provider_factory.h"
 #include "tensorrt_execution_provider.h"
 
-#include "cuda/cuda_common.h"
-#include "cuda/cuda_call.h"
+#include "utils/cuda/cuda_common.h"
+#include "utils/cuda/cuda_call.h"
 
 namespace trt_ep {
 

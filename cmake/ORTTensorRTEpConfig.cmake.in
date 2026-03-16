@@ -1,0 +1,7 @@
+# library version
+set(TensortRTEp_VERSION "@TensortRTEp_VERSION@")
+
+# import targets
+include ("${CMAKE_CURRENT_LIST_DIR}/TensortRTEpTargets.cmake")
+
+set(TensortRTEp_INCLUDE_DIRS "${_INSTALL_PREFIX}/include")

@@ -1,0 +1,6 @@
+.vs
+.vscode
+build
+out
+__pycache__
+CMakeSettings.json

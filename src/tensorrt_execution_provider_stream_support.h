@@ -5,7 +5,7 @@
 
 #include "onnxruntime_c_api.h"
 #include "tensorrt_provider_factory.h"
-#include "ep_utils.h"
+#include "utils/ep_utils.h"
 
 #include <cuda_runtime_api.h>
 

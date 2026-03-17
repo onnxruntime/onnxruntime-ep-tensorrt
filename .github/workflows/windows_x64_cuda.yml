@@ -28,19 +28,21 @@ jobs:
       fail-fast: false
       matrix:
         config: [Debug, RelWithDebInfo]
+        cuda_version: ['12.9', '13.0']
+        trt_version: ['10.14.1.48']
 
     runs-on: [
       "self-hosted",
       "1ES.Pool=onnxruntime-ep-github-Win",
       "JobId=windows-tensorrtep-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
-    name: Windows-${{ matrix.config }}
+    name: Windows-${{ matrix.config }}_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}
 
     environment: Windows_x64
     env:
       AZCOPY_AUTO_LOGIN_TYPE: ${{ vars.AZCOPY_AUTO_LOGIN_TYPE }}
       AZCOPY_MSI_CLIENT_ID: ${{ vars.AZCOPY_MSI_CLIENT_ID }}
-      ARTIFACT_NAME: Windows_x64_${{ matrix.config }}
+      ARTIFACT_NAME: Windows_x64_${{ matrix.config }}_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}
 
     steps:
     - name: Install Ninja
@@ -54,19 +56,19 @@ jobs:
     - name: Checkout Code
       uses: actions/checkout@v6
 
-    - name: Download CUDA SDK v12.8
+    - name: Download CUDA SDK v${{ matrix.cuda_version }}
       shell: pwsh
       run: |
-        azcopy.exe cp --recursive "https://lotusscus.blob.core.windows.net/models/cuda_sdk/v12.8" ${{ runner.temp }}
+        azcopy.exe cp --recursive "https://lotusscus.blob.core.windows.net/models/cuda_sdk/v${{ matrix.cuda_version }}" ${{ runner.temp }}
         Get-ChildItem -Path "${{ runner.temp }}"
-        Get-ChildItem -Path "${{ runner.temp }}\v12.8" -Recurse
+        Get-ChildItem -Path "${{ runner.temp }}\v${{ matrix.cuda_version }}" -Recurse
 
-    - name: Download TensorRT-10.14.1.48.Windows.win10.cuda-12.9
+    - name: Download TensorRT-${{ matrix.trt_version }}.Windows.win10.cuda-${{ matrix.cuda_version }}
       shell: pwsh
       run: |
-        azcopy.exe cp --recursive "https://lotusscus.blob.core.windows.net/models/local/TensorRT-10.14.1.48.Windows.win10.cuda-12.9" ${{ runner.temp }}
+        azcopy.exe cp --recursive "https://lotusscus.blob.core.windows.net/models/local/TensorRT-${{ matrix.trt_version }}.Windows.win10.cuda-${{ matrix.cuda_version }}" ${{ runner.temp }}
         Get-ChildItem -Path "${{ runner.temp }}"
-        Get-ChildItem -Path "${{ runner.temp }}\TensorRT-10.14.1.48.Windows.win10.cuda-12.9" -Recurse
+        Get-ChildItem -Path "${{ runner.temp }}\TensorRT-${{ matrix.trt_version }}.Windows.win10.cuda-${{ matrix.cuda_version }}" -Recurse
 
     - name: Run sccache-cache
       uses: mozilla-actions/sccache-action@v0.0.9
@@ -92,9 +94,9 @@ jobs:
           -G Ninja ^
           -DCMAKE_BUILD_TYPE=${{ matrix.config }} ^
           -DCMAKE_INSTALL_PREFIX=out/${{ env.ARTIFACT_NAME }} ^
-          -DCMAKE_CUDA_COMPILER=${{ runner.temp }}\v12.8\bin\nvcc.exe ^
+          -DCMAKE_CUDA_COMPILER=${{ runner.temp }}\v${{ matrix.cuda_version }}\bin\nvcc.exe ^
           -DCMAKE_CUDA_ARCHITECTURES=${{ env.CMAKE_CUDA_ARCHITECTURES }} ^
-          -DTENSORRT_HOME=${{ runner.temp }}\TensorRT-10.14.1.48.Windows.win10.cuda-12.9 ^
+          -DTENSORRT_HOME=${{ runner.temp }}\TensorRT-${{ matrix.trt_version }}.Windows.win10.cuda-${{ matrix.cuda_version }} ^
           -DCMAKE_C_COMPILER_LAUNCHER=sccache ^
           -DCMAKE_CXX_COMPILER_LAUNCHER=sccache ^
           -S . -B out/build

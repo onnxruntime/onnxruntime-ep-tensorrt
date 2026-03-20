@@ -33,7 +33,9 @@ if(NOT TENSORRT_HOME)
 endif()
 
 # CMake config to force dynamic debug CRT or dynamic release CRT globally for all dependencies.
-set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+if(MSVC)
+  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+endif()
 
 option(ORTTensorRTEp_INSTALL "Install ORTTensorRTEp binaries and files" ON)
 option(CMAKE_CUDA_ARCHITECTURES "Version of CUDA architectures to enable" 80)
@@ -60,7 +62,6 @@ endif()
 
 # Setup CUDA dependencies
 enable_language(CUDA) # via nvcc to get the CUDA tool kit
-file(TO_CMAKE_PATH "/usr/local/cuda" CUDAToolkit_ROOT)
 find_package(CUDAToolkit REQUIRED)
 
 file(GLOB ORTTensorRTEp_SRC CONFIGURE_DEPENDS
@@ -79,7 +80,7 @@ target_compile_definitions(ORTTensorRTEp PUBLIC
 )
 
 set_onnxruntime_paths(
-  ORT_HOME ${ORT_HOME}
+  ORT_HOME "${ORT_HOME}"
   DEFAULT_ORT_VERSION "1.24.1"
   ORT_INCLUDE_DIR_VAR ORT_INCLUDE_DIR
   ORT_LIBRARY_DIR_VAR ORT_LIBRARY_DIR

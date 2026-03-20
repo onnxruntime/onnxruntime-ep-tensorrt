@@ -1,5 +1,4 @@
 name: "Linux x64 CUDA"
-description: "Linux x64 CUDA GHA workflow to build TensorRTEp"
 
 
 concurrency:
@@ -91,6 +90,9 @@ jobs:
     - name: Checkout Code
       uses: actions/checkout@v6
 
+    - name: ccache
+      uses: hendrikmuhs/ccache-action@v1.2
+
     - name: Run the build
       run: |
         env
@@ -98,6 +100,7 @@ jobs:
         which ninja && ninja --version
         which $CC && $CC --version
         which $CXX && $CXX --version
+        which ccache && ccache --version
         where python && python --version
 
         cmake                                                       \

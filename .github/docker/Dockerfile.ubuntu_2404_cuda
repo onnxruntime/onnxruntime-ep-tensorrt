@@ -14,7 +14,7 @@ ARG TRT_VERSION
 ARG LD_LIBRARY_PATH_ARG
 ARG CMAKE_CUDA_ARCHITECTURES
 
-ENV PATH=/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/src/tensorrt/bin:${PATH}
+ENV PATH=/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/src/tensorrt/bin:/usr/lib/ccache:/usr/local/opt/ccache/libexec:${PATH}
 ENV DEBIAN_FRONTEND=noninteractive
 ENV LD_LIBRARY_PATH=${LD_LIBRARY_PATH_ARG}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
 
@@ -27,6 +27,7 @@ RUN apt-get update && \
         g++-13 \
         build-essential \
         cmake \
+        ccache \
         ninja-build \
         python3 \
         python3-dev \

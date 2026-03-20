@@ -1,5 +1,4 @@
 name: "Windows x64 CUDA"
-description: "Windows x64 CUDA GHA workflow to build TensorRTEp"
 
 
 concurrency:

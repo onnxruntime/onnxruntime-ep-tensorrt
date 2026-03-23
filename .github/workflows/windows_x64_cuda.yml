@@ -69,7 +69,7 @@ jobs:
         Get-ChildItem -Path "${{ runner.temp }}"
         Get-ChildItem -Path "${{ runner.temp }}\TensorRT-${{ matrix.trt_version }}.Windows.win10.cuda-${{ matrix.cuda_version }}" -Recurse
 
-    - name: Run sccache-cache
+    - name: Setup sccache
       uses: mozilla-actions/sccache-action@v0.0.9
 
     - name: Build
@@ -96,8 +96,6 @@ jobs:
           -DCMAKE_CUDA_COMPILER=${{ runner.temp }}\v${{ matrix.cuda_version }}\bin\nvcc.exe ^
           -DCMAKE_CUDA_ARCHITECTURES=${{ env.CMAKE_CUDA_ARCHITECTURES }} ^
           -DTENSORRT_HOME=${{ runner.temp }}\TensorRT-${{ matrix.trt_version }}.Windows.win10.cuda-${{ matrix.cuda_version }} ^
-          -DCMAKE_C_COMPILER_LAUNCHER=sccache ^
-          -DCMAKE_CXX_COMPILER_LAUNCHER=sccache ^
           -S . -B out/build
         if %errorlevel% neq 0 exit /b %errorlevel%
 

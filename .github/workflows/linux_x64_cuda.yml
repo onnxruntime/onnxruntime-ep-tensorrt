@@ -133,7 +133,7 @@ jobs:
       "JobId=linux-tensorrtep-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
     needs: build-matrix
-    name: Build Source CUDA${{ matrix.config.cuda_version }} TRT${{ matrix.config.trt_version }}
+    name: Build ${{ matrix.config.build_type }} CUDA${{ matrix.config.cuda_version }} TRT${{ matrix.config.trt_version }}
     container: ${{ matrix.config.full-image-name }}
     environment: Linux_x64
     env:

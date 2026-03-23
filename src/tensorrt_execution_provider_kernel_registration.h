@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "ep_utils.h"
+#include "utils/ep_utils.h"
 
 namespace trt_ep {
 

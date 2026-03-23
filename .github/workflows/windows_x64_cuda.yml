@@ -1,0 +1,110 @@
+name: "Windows x64 CUDA"
+
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+
+env:
+  PYTHON_VERSION: "3.x"
+  CMAKE_CUDA_ARCHITECTURES: 86
+
+
+jobs:
+  win-build:
+    strategy:
+      fail-fast: false
+      matrix:
+        config: [Debug, RelWithDebInfo]
+        cuda_version: ['12.9', '13.0']
+        trt_version: ['10.14.1.48']
+
+    runs-on: [
+      "self-hosted",
+      "1ES.Pool=onnxruntime-ep-github-Win",
+      "JobId=windows-tensorrtep-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
+    ]
+    name: Windows-${{ matrix.config }}_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}
+
+    environment: Windows_x64
+    env:
+      AZCOPY_AUTO_LOGIN_TYPE: ${{ vars.AZCOPY_AUTO_LOGIN_TYPE }}
+      AZCOPY_MSI_CLIENT_ID: ${{ vars.AZCOPY_MSI_CLIENT_ID }}
+      ARTIFACT_NAME: Windows_x64_${{ matrix.config }}_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}
+
+    steps:
+    - name: Install Ninja
+      shell: cmd
+      run: |
+        where choco
+        C:\ProgramData\chocolatey\bin\choco sources
+        C:\ProgramData\chocolatey\bin\choco source add -n chocolatey -s 'https://chocolatey.org/api/v2/'
+        C:\ProgramData\chocolatey\bin\choco install ninja
+
+    - name: Checkout Code
+      uses: actions/checkout@v6
+
+    - name: Download CUDA SDK v${{ matrix.cuda_version }}
+      shell: pwsh
+      run: |
+        azcopy.exe cp --recursive "https://lotusscus.blob.core.windows.net/models/cuda_sdk/v${{ matrix.cuda_version }}" ${{ runner.temp }}
+        Get-ChildItem -Path "${{ runner.temp }}"
+        Get-ChildItem -Path "${{ runner.temp }}\v${{ matrix.cuda_version }}" -Recurse
+
+    - name: Download TensorRT-${{ matrix.trt_version }}.Windows.win10.cuda-${{ matrix.cuda_version }}
+      shell: pwsh
+      run: |
+        azcopy.exe cp --recursive "https://lotusscus.blob.core.windows.net/models/local/TensorRT-${{ matrix.trt_version }}.Windows.win10.cuda-${{ matrix.cuda_version }}" ${{ runner.temp }}
+        Get-ChildItem -Path "${{ runner.temp }}"
+        Get-ChildItem -Path "${{ runner.temp }}\TensorRT-${{ matrix.trt_version }}.Windows.win10.cuda-${{ matrix.cuda_version }}" -Recurse
+
+    - name: Setup sccache
+      uses: mozilla-actions/sccache-action@v0.0.9
+
+    - name: Build
+      shell: cmd
+      env:
+        CC: cl
+        CXX: cl
+        SCCACHE_GHA_ENABLED: "true"
+      run: |
+        call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+        if %errorlevel% neq 0 exit /b %errorlevel%
+
+        set
+        where cmake && cmake --version
+        where ninja && ninja --version
+        where %CC% && %CC%
+        where %CXX% && %CXX%
+        where python && python --version
+
+        cmake ^
+          -G Ninja ^
+          -DCMAKE_BUILD_TYPE=${{ matrix.config }} ^
+          -DCMAKE_INSTALL_PREFIX=out/${{ env.ARTIFACT_NAME }} ^
+          -DCMAKE_CUDA_COMPILER=${{ runner.temp }}\v${{ matrix.cuda_version }}\bin\nvcc.exe ^
+          -DCMAKE_CUDA_ARCHITECTURES=${{ env.CMAKE_CUDA_ARCHITECTURES }} ^
+          -DTENSORRT_HOME=${{ runner.temp }}\TensorRT-${{ matrix.trt_version }}.Windows.win10.cuda-${{ matrix.cuda_version }} ^
+          -S . -B out/build
+        if %errorlevel% neq 0 exit /b %errorlevel%
+
+        cmake --build out/build -j %NUMBER_OF_PROCESSORS%
+        if %errorlevel% neq 0 exit /b %errorlevel%
+        cmake --install out/build
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ env.ARTIFACT_NAME }}
+        path: out/${{ env.ARTIFACT_NAME }}

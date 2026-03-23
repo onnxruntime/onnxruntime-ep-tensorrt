@@ -1,35 +1,94 @@
 # usage:
-# cd build/
-# cmake -S ../ -B ./ -DCMAKE_BUILD_TYPE=Debug -DORT_HOME=/path/to/ort_package/onnxruntime-win-x64-gpu-1.23.0 -DCMAKE_CUDA_ARCHITECTURES=80 -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc -DTENSORRT_HOME=/path/to/tensorrt/TensorRT-10.3.0.26 -DCMAKE_POSITION_INDEPENDENT_CODE=ON (see the result of "nvidia-smi --query-gpu=compute_cap --format=csv,noheader,nounits")
-# cmake --build ./ --config Debug
-cmake_minimum_required(VERSION 3.26)
-project(TensorRTEp VERSION 1.0)
-set(CMAKE_CXX_STANDARD 17)
-include(${CMAKE_SOURCE_DIR}/cmake/onnxruntime_library_utils.cmake)
+# mkdir build
+# cd build
+# cmake                                                             \
+#   -DCMAKE_BUILD_TYPE=Debug                                        \
+#   -DORT_HOME=/path/to/ort_package/onnxruntime-win-x64-gpu-1.23.0  \
+#   -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc                  \
+#   -DTENSORRT_HOME=/path/to/tensorrt/TensorRT-10.3.0.26            \
+#   -S .. -B .
 
-enable_language(CUDA) # via nvcc to get the CUDA tool kit
-file(TO_CMAKE_PATH "/usr/local/cuda" CUDAToolkit_ROOT)
-find_package(CUDAToolkit REQUIRED)
+cmake_minimum_required(VERSION 3.25)
+cmake_policy(SET CMP0091 NEW) # Use CMAKE_MSVC_RUNTIME_LIBRARY
+cmake_policy(SET CMP0141 NEW) # Use CMAKE_MSVC_DEBUG_INFORMATION_FORMAT
+project(ORTTensorRTEp VERSION 1.0.0 LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+# Use release mode if not specified
+if(NOT CMAKE_BUILD_TYPE)
+  message(WARNING "Build type not set, falling back to RelWithDebInfo.")
+  set(CMAKE_BUILD_TYPE "RelWithDebInfo" CACHE STRING "Choose build configuration. [Debug | Release]" FORCE)
+endif()
+
+if(NOT CMAKE_CUDA_COMPILER)
+  message(FATAL_ERROR "Please specify CMAKE_CUDA_COMPILER, e.g. -DCMAKE_CUDA_COMPILER=/path/to/nvcc")
+endif()
+
+if(NOT TENSORRT_HOME)
+  message(FATAL_ERROR "Please specify TENSORRT_HOME, e.g. -DTENSORRT_HOME=/path/to/trt/")
+endif()
 
 # CMake config to force dynamic debug CRT or dynamic release CRT globally for all dependencies.
-# This is to address the issue of:
-# libprotobufd.lib(common.obj) : error LNK2038: mismatch detected for 'RuntimeLibrary': value 'MTd_StaticDebug' doesn't match value 'MDd_DynamicDebug' in unary_elementwise_ops_impl.obj
-if (WIN32)
-  if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDebugDLL" CACHE STRING "" FORCE)  # /MDd
-    set(BUILD_SHARED_LIBS OFF)  # Build protobuf as static .lib, but using dynamic runtime
-  endif()
+if(MSVC)
+  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+endif()
 
-  if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL" CACHE STRING "" FORCE)
-    set(BUILD_SHARED_LIBS OFF)  # Build protobuf as static .lib, but using dynamic runtime
+option(ORTTensorRTEp_INSTALL "Install ORTTensorRTEp binaries and files" ON)
+option(ORTTensorRTEp_OBJECT_CACHE "Enable object caching using either sccache/ccache" ON)
+option(CMAKE_CUDA_ARCHITECTURES "Version of CUDA architectures to enable" 86)
+
+if(ORTTensorRTEp_OBJECT_CACHE)
+  find_program(SCCACHE_PROGRAM sccache)
+  find_program(CCACHE_PROGRAM ccache)
+  # Prioritize sccache on Windows & ccache on non-Windows
+  if(WIN32)
+    if(SCCACHE_PROGRAM)
+      set(CMAKE_C_COMPILER_LAUNCHER "${SCCACHE_PROGRAM}")
+      set(CMAKE_CXX_COMPILER_LAUNCHER "${SCCACHE_PROGRAM}")
+    elseif(CCACHE_PROGRAM)
+      set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+      set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+    endif()
+  else()
+    if(CCACHE_PROGRAM)
+      set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+      set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+    elseif(SCCACHE_PROGRAM)
+      set(CMAKE_C_COMPILER_LAUNCHER "${SCCACHE_PROGRAM}")
+      set(CMAKE_CXX_COMPILER_LAUNCHER "${SCCACHE_PROGRAM}")
+    endif()
   endif()
 endif()
 
-add_definitions(-DONNX_NAMESPACE=onnx)
-add_definitions(-DONNX_ML)
-add_definitions(-DNOMINMAX)
-file(GLOB tensorrt_src 
+include(FetchContent)
+include("${CMAKE_SOURCE_DIR}/cmake/onnxruntime_library_utils.cmake")
+
+if(MSVC)
+  # Few flags required for sccache to succeed. More information here:
+  # https://github.com/mozilla/sccache/
+  set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "Embedded")
+
+  if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    string(REPLACE "/Zi" "/Z7" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
+    string(REPLACE "/Zi" "/Z7" CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG}")
+  elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
+    string(REPLACE "/Zi" "/Z7" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
+    string(REPLACE "/Zi" "/Z7" CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE}")
+  elseif(CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+    string(REPLACE "/Zi" "/Z7" CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO}")
+    string(REPLACE "/Zi" "/Z7" CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO}")
+  endif()
+endif()
+
+# Setup CUDA dependencies
+enable_language(CUDA) # via nvcc to get the CUDA tool kit
+find_package(CUDAToolkit REQUIRED)
+
+file(GLOB ORTTensorRTEp_SRC CONFIGURE_DEPENDS
   "./src/*.cc"
   "./src/kernels/*.cc"
   "./src/utils/*.cc"
@@ -37,137 +96,144 @@ file(GLOB tensorrt_src
   "./src/*.h"
   "./src/kernels/*.h"
 )
-add_library(TensorRTEp SHARED ${tensorrt_src})
+add_library(ORTTensorRTEp SHARED ${ORTTensorRTEp_SRC})
+target_compile_definitions(ORTTensorRTEp PUBLIC
+  -DONNX_NAMESPACE=onnx
+  -DONNX_ML
+  -DNOMINMAX
+)
 
 set_onnxruntime_paths(
-  ORT_HOME ${ORT_HOME}
-  DEFAULT_ORT_VERSION "1.23.2"
+  ORT_HOME "${ORT_HOME}"
+  DEFAULT_ORT_VERSION "1.24.1"
   ORT_INCLUDE_DIR_VAR ORT_INCLUDE_DIR
-  ORT_LIBRARY_DIR_VAR ORT_LIBRARY_DIR)
+  ORT_LIBRARY_DIR_VAR ORT_LIBRARY_DIR
+)
 
 message(STATUS "ORT_LIBRARY_DIR: ${ORT_LIBRARY_DIR}")
 message(STATUS "ORT_INCLUDE_DIR: ${ORT_INCLUDE_DIR}")
 
-if (NOT TENSORRT_HOME)
-  message(FATAL_ERROR "Please specify TENSORRT_HOME, e.g. -DTENSORRT_HOME=/path/to/trt/")
-endif()
-
-# Use release mode if not specified
-if (NOT CMAKE_BUILD_TYPE)
-  set(CMAKE_BUILD_TYPE "Release")
-endif()
-
-# Add dependencies
-include(FetchContent)
-
 # Add protobuf
+if(WIN32)
+  # Build protobuf as static library, but using dynamic runtime
+  set(BUILD_SHARED_LIBS OFF)
+endif()
+
 FetchContent_Declare(
   protobuf
   GIT_REPOSITORY https://github.com/protocolbuffers/protobuf.git
   GIT_TAG        v21.12  # Use a specific tag or commit
 )
-
-if (WIN32)
-  # Sometimes, protobuf ignores CMAKE_MSVC_RUNTIME_LIBRARY. To ensure it works:
-  set(protobuf_MSVC_STATIC_RUNTIME OFF CACHE BOOL "" FORCE)
-endif()
-
+set(protobuf_BUILD_TESTS OFF CACHE INTERNAL "Disable tests")
+set(protobuf_MSVC_STATIC_RUNTIME OFF CACHE INTERNAL "Force build static runtime")
 FetchContent_MakeAvailable(protobuf)
 
 # Add ONNX
 FetchContent_Declare(
   onnx
   GIT_REPOSITORY https://github.com/onnx/onnx.git
-  GIT_TAG        v1.18.0  # Use a specific tag or commit
+  GIT_TAG        e709452ef2bbc1d113faf678c24e6d3467696e83 # v1.18.0 Use a specific tag or commit
 )
-
 FetchContent_MakeAvailable(onnx)
 
 # Add GSL
+set(GSL_INSTALL OFF CACHE INTERNAL "Disable install")
 FetchContent_Declare(
   gsl
   GIT_REPOSITORY https://github.com/microsoft/GSL.git
   GIT_TAG        v4.0.0  # Use a specific tag or commit
 )
-
 FetchContent_MakeAvailable(gsl)
 
 # Add flatbuffers
+set(FLATBUFFERS_INSTALL OFF CACHE INTERNAL "Disable install")
+set(FLATBUFFERS_BUILD_TESTS OFF CACHE INTERNAL "Disable tests")
 FetchContent_Declare(
   flatbuffers
   GIT_REPOSITORY https://github.com/google/flatbuffers.git
   GIT_TAG        v23.5.26  # Use a specific tag or commit
 )
-
 FetchContent_MakeAvailable(flatbuffers)
 
-set(DEPS_PATH "${CMAKE_BINARY_DIR}/_deps")
+if(WIN32) # Windows
+  set(TRT_LIBS
+    "${TENSORRT_HOME}/lib/nvinfer_10.lib"
+    "${TENSORRT_HOME}/lib/nvinfer_plugin_10.lib"
+    "${TENSORRT_HOME}/lib/nvonnxparser_10.lib"
+  )
+  set(ORT_LIBS "${ORT_LIBRARY_DIR}/onnxruntime.lib")
 
-if (WIN32) # Windows
-  set(ORT_LIB "${ORT_HOME}/lib/onnxruntime.lib")
-  set(TRT_LIBS "${TENSORRT_HOME}/lib/nvinfer_10.lib" 
-               "${TENSORRT_HOME}/lib/nvinfer_plugin_10.lib"
-               "${TENSORRT_HOME}/lib/nvonnxparser_10.lib")
-  
-  if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(DEPS_LIBS ${DEPS_LIBS}
-                  "${DEPS_PATH}/protobuf-build/${CMAKE_BUILD_TYPE}/libprotobufd.lib"
-                  "${DEPS_PATH}/protobuf-build/${CMAKE_BUILD_TYPE}/libprotocd.lib")
-  else()
-    set(DEPS_LIBS ${DEPS_LIBS} 
-                  "${DEPS_PATH}/protobuf-build/${CMAKE_BUILD_TYPE}/libprotobuf.lib"
-                  "${DEPS_PATH}/protobuf-build/${CMAKE_BUILD_TYPE}/libprotoc.lib")
-  endif()
-
-  set(DEPS_LIBS "${DEPS_PATH}/flatbuffers-build/${CMAKE_BUILD_TYPE}/flatbuffers.lib"
-                "${DEPS_PATH}/onnx-build/${CMAKE_BUILD_TYPE}/onnx.lib"
-                "${DEPS_PATH}/onnx-build/${CMAKE_BUILD_TYPE}/onnx_proto.lib")
-
-  set(TRT_EP_LIB_LINK_FLAG
-        "-DEF:${CMAKE_SOURCE_DIR}/src/tensorrt_execution_provider.def")
-
-else() # Linux
-  set(ORT_LIB "${ORT_HOME}/lib/libonnxruntime.so")
-  set(TRT_LIBS "${TENSORRT_HOME}/lib/libnvinfer.so"
-               "${TENSORRT_HOME}/lib/libnvinfer_plugin.so"
-               "${TENSORRT_HOME}/lib/libnvonnxparser.so")
-  set(DEPS_LIBS "${DEPS_PATH}/flatbuffers-build/libflatbuffers.a"
-               "${DEPS_PATH}/onnx-build/libonnx.a"
-               "${DEPS_PATH}/onnx-build/libonnx_proto.a")
-
-  if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(DEPS_LIBS ${DEPS_LIBS}
-                 "${DEPS_PATH}/protobuf-build/libprotobufd.a"
-                 "${DEPS_PATH}/protobuf-build/libprotocd.a")
-  else()
-    set(DEPS_LIBS ${DEPS_LIBS}
-                 "${DEPS_PATH}/protobuf-build/libprotobuf.a"
-                 "${DEPS_PATH}/protobuf-build/libprotoc.a")
-  endif()
+  target_link_options(ORTTensorRTEp PRIVATE "-DEF:${CMAKE_SOURCE_DIR}/src/tensorrt_execution_provider.def")
+else()
+  set(TRT_LIBS
+    "${TENSORRT_HOME}/libnvinfer.so.10"
+    "${TENSORRT_HOME}/libnvinfer_plugin.so.10"
+    "${TENSORRT_HOME}/libnvonnxparser.so.10"
+  )
+  set(ORT_LIBS "${ORT_LIBRARY_DIR}/libonnxruntime.so")
 endif()
 
-MESSAGE(STATUS "Looking for following dependencies ...")
-MESSAGE(STATUS "ORT lib  : ${ORT_LIB}")
-MESSAGE(STATUS "TRT libs : ${TRT_LIBS}")
-MESSAGE(STATUS "Deps libs: ${DEPS_LIBS}")
+message(STATUS "ORT libs: ${ORT_LIBS}")
+message(STATUS "TRT libs: ${TRT_LIBS}")
 
-set_property(TARGET TensorRTEp APPEND_STRING PROPERTY LINK_FLAGS
-               ${TRT_EP_LIB_LINK_FLAG})
-
-target_include_directories(TensorRTEp PUBLIC "${ORT_HOME}/include"
-                                             "./src/utils"
-                                             "/usr/local/cuda/include"
-                                             "${TENSORRT_HOME}/include"
-                                             "${DEPS_PATH}/flatbuffers-src/include"
-                                             "${DEPS_PATH}/gsl-src/include" # GSL is header-only
-                                             "${DEPS_PATH}/onnx-src"
-                                             "${DEPS_PATH}/onnx-build"
-                                             "${DEPS_PATH}/protobuf-src/src"
+target_include_directories(ORTTensorRTEp PRIVATE
+  "$<BUILD_INTERFACE:${ORT_INCLUDE_DIR}>"
+  "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>"
+  "$<BUILD_INTERFACE:${CUDAToolkit_INCLUDE_DIRS}>"
+  "$<BUILD_INTERFACE:${TENSORRT_HOME}/include>"
+  "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/orttrtep>"
 )
 
-target_link_libraries(TensorRTEp PUBLIC #${DEPS_LIBS}
-                                        protobuf::libprotobuf onnx flatbuffers
-                                        ${ORT_LIB}
-                                        ${TRT_LIBS}
-                                        CUDA::cudart
+target_link_libraries(ORTTensorRTEp PRIVATE
+  ${ORT_LIBS}
+  ${TRT_LIBS}
+  CUDA::cudart
+  flatbuffers
+  GSL
+  onnx
+  protobuf::libprotobuf
 )
+
+configure_file(
+  "${PROJECT_SOURCE_DIR}/cmake/ORTTensorRTEpConfigVersion.cmake.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/ORTTensorRTEpConfigVersion.cmake"
+  @ONLY
+)
+configure_file(
+  "${PROJECT_SOURCE_DIR}/cmake/ORTTensorRTEpConfig.cmake.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/ORTTensorRTEpConfig.cmake"
+  @ONLY
+)
+
+if(ORTTensorRTEp_INSTALL)
+  # Installation target
+  include(GNUInstallDirs)
+  include(CMakePackageConfigHelpers)
+
+  if(WIN32 AND (CMAKE_CXX_COMPILER_ID MATCHES "MSVC"))
+    install(
+      FILES "$<TARGET_PDB_FILE:ORTTensorRTEp>"
+      CONFIGURATIONS Debug RelWithDebInfo
+      DESTINATION "${CMAKE_INSTALL_BINDIR}"
+    )
+  endif()
+
+  install(
+    DIRECTORY src/
+    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/orttrtep"
+    FILES_MATCHING
+    PATTERN "*.h"
+  )
+
+  install(
+    FILES "${CMAKE_CURRENT_BINARY_DIR}/ORTTensorRTEpConfig.cmake"
+          "${CMAKE_CURRENT_BINARY_DIR}/ORTTensorRTEpConfigVersion.cmake"
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/orttrtep"
+  )
+
+  install(TARGETS ORTTensorRTEp GSL flatbuffers EXPORT ORTTensorRTEpTargets)
+  install(EXPORT ORTTensorRTEpTargets
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/orttrtep"
+    NAMESPACE ORTTensorRTEp::
+  )
+endif()

@@ -7,7 +7,7 @@
 #include <cuda_runtime.h>
 
 #define ORT_EP_UTILS_ORT_GRAPH_TO_PROTO_IMPL
-#include "ort_graph_to_proto.h"
+#include "utils/ort_graph_to_proto.h"
 
 #include "tensorrt_execution_provider_utils.h"
 #include "tensorrt_execution_provider.h"
@@ -16,7 +16,7 @@
 #include "tensorrt_execution_provider_stream_support.h"
 #include "onnx/onnx_pb.h"
 #include "cuda/unary_elementwise_ops_impl.h"
-#include "ep_utils.h"
+#include "utils/ep_utils.h"
 
 #ifdef _WIN32
 #include <windows.h>

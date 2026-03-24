@@ -8,6 +8,10 @@ concurrency:
 
 on:
   workflow_dispatch:
+#    inputs:
+#      run_id:
+#        description: 'Run-id of TRT build.'
+#        required: true
 
 
 jobs:
@@ -124,6 +128,9 @@ jobs:
       with:
         architecture: x64
 
+    - name: Setup sccache
+      uses: mozilla-actions/sccache-action@v0.0.9
+
     - name: Build and Clean Binaries
       working-directory: ${{ runner.temp }}
       shell: pwsh
@@ -184,3 +191,11 @@ jobs:
       with:
         name: ${{ env.ARTIFACT_NAME }}
         path: ${{ runner.temp }}\build
+
+#    - name: Download TRT Ep
+#      uses: actions/download-artifact@v7
+#      with:
+#        pattern: 'Windows_x64_${{ matrix.build_type }}*'
+#        run_id: ${{ github.event.inputs.run_id }}
+#        github-token: ${{ secrets.GITHUB_TOKEN }}
+

@@ -254,10 +254,10 @@ jobs:
       shell: pwsh
       env:
         ORT_UNIT_TEST_MAIN_DYNAMIC_PLUGIN_EP_CONFIG_JSON: |
-          '{'
-            '"ep_library_registration_name": "NvTensorRtRtx",'
-            '"ep_library_path": "bin\\ORTTensorRTEp.dll",'
-            '"selected_ep_name": "NvTensorRtRtx",'
-            '"default_ep_options": {}'
-          '}'
+          {
+            "ep_library_registration_name": "NvTensorRtRtx",
+            "ep_library_path": "bin\\ORTTensorRTEp.dll",
+            "selected_ep_name": "NvTensorRtRtx",
+            "default_ep_options": {}
+          }
       run: ${{ matrix.build_type }}\onnxruntime_provider_test.exe

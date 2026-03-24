@@ -8,14 +8,21 @@ concurrency:
 
 on:
   workflow_dispatch:
-#    inputs:
-#      run_id:
-#        description: 'Run-id of TRT build.'
-#        required: true
+    inputs:
+      trt_run_id:
+        description: 'Run-id of TRT build.'
+        default: '23461258551'
+        required: true
+
+      ort_run_id:
+        description: 'Run-id of ORT build.'
+        default: '23507955964'
+        required: true
 
 
 jobs:
-  build-image:
+  build-ort:
+    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -27,7 +34,7 @@ jobs:
       "1ES.Pool=onnxruntime-ep-github-Win",
       "JobId=windows-ort-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
-    name: Build Image CUDA${{ matrix.cuda_version }}
+    name: Build ORT CUDA${{ matrix.cuda_version }} ${{ matrix.build_type }}
 
     environment: Windows_x64
     env:
@@ -192,10 +199,65 @@ jobs:
         name: ${{ env.ARTIFACT_NAME }}
         path: ${{ runner.temp }}\build
 
-#    - name: Download TRT Ep
-#      uses: actions/download-artifact@v7
-#      with:
-#        pattern: 'Windows_x64_${{ matrix.build_type }}*'
-#        run_id: ${{ github.event.inputs.run_id }}
-#        github-token: ${{ secrets.GITHUB_TOKEN }}
+  run-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [Debug] #, RelWithDebInfo]
+        cuda_version: ['12.9']  # , '13.0']
+        trt_version: ['10.14.1.48']
 
+    runs-on: [
+      "self-hosted",
+      "1ES.Pool=onnxruntime-ep-github-Win",
+      "JobId=windows-ort-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
+    ]
+    name: Run Tests CUDA${{ matrix.cuda_version }}
+
+    environment: Windows_x64
+    env:
+      ALLOW_RELEASED_ONNX_OPSET_ONLY: '0'
+      ARTIFACT_NAME: ort_win_x64_cuda${{ matrix.cuda_version }}_${{ matrix.build_type }}
+      AZCOPY_AUTO_LOGIN_TYPE: ${{ vars.AZCOPY_AUTO_LOGIN_TYPE }}
+      AZCOPY_MSI_CLIENT_ID: ${{ vars.AZCOPY_MSI_CLIENT_ID }}
+      CMAKE_CUDA_ARCHITECTURES: 86
+      DocUpdateNeeded: false
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+      ONNXRUNTIME_TEST_GPU_DEVICE_ID: '0'
+      OrtPackageId: Microsoft.ML.OnnxRuntime.Gpu
+      setVcvars: true
+
+    steps:
+    - name: Download TensorRT-${{ matrix.trt_version }}.Windows.win10.cuda-${{ matrix.cuda_version }}
+      shell: pwsh
+      run: |
+        azcopy.exe cp --recursive "https://lotusscus.blob.core.windows.net/models/local/TensorRT-${{ matrix.trt_version }}.Windows.win10.cuda-${{ matrix.cuda_version }}" ${{ runner.temp }}
+        Get-ChildItem -Path "${{ runner.temp }}"
+        Get-ChildItem -Path "${{ runner.temp }}\TensorRT-${{ matrix.trt_version }}.Windows.win10.cuda-${{ matrix.cuda_version }}" -Recurse
+        Add-Content -Path $env:GITHUB_PATH -Value "$env:${{ runner.temp }}\TensorRT-${{ matrix.trt_version }}.Windows.win10.cuda-${{ matrix.cuda_version }}\bin"
+
+    - name: Download TRT Ep
+      uses: actions/download-artifact@v7
+      with:
+        pattern: 'Windows_x64_${{ matrix.build_type }}_cuda${{ matrix.cuda_version }}_trt*'
+        run_id: ${{ github.event.inputs.run_id }}
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Download ORT
+      uses: actions/download-artifact@v7
+      with:
+        name: 'ort_win_x64_cuda${{ matrix.cuda_version }_${{ matrix.build_type }}'
+        run_id: ${{ github.event.inputs.run_id }}
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Run tests
+      shell: pwsh
+      env:
+        ORT_UNIT_TEST_MAIN_DYNAMIC_PLUGIN_EP_CONFIG_JSON: |
+          '{'
+            '"ep_library_registration_name": "NvTensorRtRtx",'
+            '"ep_library_path": "bin\\ORTTensorRTEp.dll",'
+            '"selected_ep_name": "NvTensorRtRtx",'
+            '"default_ep_options": {}'
+          '}'
+      run: ${{ matrix.build_type }}\onnxruntime_provider_test.exe

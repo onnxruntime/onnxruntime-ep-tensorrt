@@ -127,6 +127,8 @@ jobs:
     - name: Build and Clean Binaries
       working-directory: ${{ runner.temp }}
       shell: pwsh
+      env:
+        SCCACHE_GHA_ENABLED: "true"
       run: |
         npm install -g typescript
         if ($lastExitCode -ne 0) {

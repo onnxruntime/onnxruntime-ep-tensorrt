@@ -39,7 +39,7 @@ jobs:
     environment: Windows_x64
     env:
       ALLOW_RELEASED_ONNX_OPSET_ONLY: '0'
-      ARTIFACT_NAME: ort_win_x64_cuda${{ matrix.cuda_version }}_${{ matrix.build_type }}
+      ARTIFACT_NAME: ort_win-x64_cuda${{ matrix.cuda_version }}_${{ matrix.build_type }}
       AZCOPY_AUTO_LOGIN_TYPE: ${{ vars.AZCOPY_AUTO_LOGIN_TYPE }}
       AZCOPY_MSI_CLIENT_ID: ${{ vars.AZCOPY_MSI_CLIENT_ID }}
       CMAKE_CUDA_ARCHITECTURES: 86
@@ -211,7 +211,7 @@ jobs:
     - name: Download ORT
       uses: actions/download-artifact@v7
       with:
-        name: 'ort_win_x64_cuda${{ matrix.cuda_version }}_${{ matrix.build_type }}'
+        name: 'ort_win-x64_cuda${{ matrix.cuda_version }}_${{ matrix.build_type }}'
         run-id: ${{ github.event.inputs.ort_run_id }}
         github-token: ${{ secrets.GITHUB_TOKEN }}
 

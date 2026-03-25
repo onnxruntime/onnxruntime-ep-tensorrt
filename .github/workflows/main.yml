@@ -22,6 +22,7 @@ on:
 
 jobs:
   win-build-ort:
+    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -34,7 +35,6 @@ jobs:
       "JobId=windows-ort-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
     name: Win Build ORT CUDA${{ matrix.cuda_version }} ${{ matrix.build_type }}
-    if: false
 
     environment: Windows_x64
     env:
@@ -160,6 +160,7 @@ jobs:
         path: ${{ runner.temp }}\build
 
   win-run-test:
+    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -173,7 +174,6 @@ jobs:
       "JobId=windows-ort-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
     name: Win Run Tests CUDA${{ matrix.cuda_version }} ${{ matrix.build_type }}
-    if: false
 
     environment: Windows_x64
     env:
@@ -229,7 +229,26 @@ jobs:
       run: ${{ github.workspace }}\${{ matrix.build_type }}\onnxruntime_provider_test.exe
 
 
+  try-me:
+    runs-on: ubuntu-latest
+    name: Try Me
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v6
+      with:
+        repository: microsoft/onnxruntime
+        ref: 'v1.24.1'
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Build and Clean Binaries
+      working-directory: ${{ runner.temp }}
+      run: |
+        ls -l ${{ github.workspace }}/..
+
+
   linux-build-ort:
+    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -276,7 +295,7 @@ jobs:
     - name: Build and Clean Binaries
       working-directory: ${{ runner.temp }}
       run: |
-        ls -l ${{ github.workspace }}
+        ls -l ${{ github.workspace }}/..
         # --use_vcpkg \
         # --use_vcpkg_ms_internal_asset_cache \
         # Execute the build process
@@ -315,6 +334,7 @@ jobs:
 
 
   linux-run-test:
+    if: false
     strategy:
       fail-fast: false
       matrix:

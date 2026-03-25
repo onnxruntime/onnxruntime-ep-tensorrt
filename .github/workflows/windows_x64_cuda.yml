@@ -35,7 +35,7 @@ jobs:
       "1ES.Pool=onnxruntime-ep-github-Win",
       "JobId=trtep-win-x64-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
-    name: Build_TRTEp_Win-x64_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}
+    name: Build TRTEp Win-x64 CUDA${{ matrix.cuda_version }} TRT${{ matrix.trt_version }} ${{ matrix.build_type }}
 
     environment: Windows_x64
     env:
@@ -122,7 +122,7 @@ jobs:
       "1ES.Pool=onnxruntime-ep-github-Win",
       "JobId=ort-win-x64-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
-    name: Build_ORT_Win-x64_cuda${{ matrix.cuda_version }}_${{ matrix.build_type }}
+    name: Build ORT Win-x64 CUDA${{ matrix.cuda_version }} ${{ matrix.build_type }}
 
     environment: Windows_x64
     env:
@@ -248,7 +248,7 @@ jobs:
       "1ES.Pool=onnxruntime-ep-github-Win",
       "JobId=trtep-win-x64-test-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
-    name: Test_TRTEp_Win-x64_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}
+    name: Test TRTEp Win-x64 CUDA${{ matrix.cuda_version }} TRT${{ matrix.trt_version }} ${{ matrix.build_type }}
     needs: [trtep-build, ort-build]
 
     environment: Windows_x64

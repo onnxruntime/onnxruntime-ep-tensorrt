@@ -133,7 +133,7 @@ jobs:
       "JobId=trtep-linux-x64-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
     needs: build-matrix
-    name: Build_TRTEp_Linux-x64_cuda${{ matrix.config.cuda_version }}_trt{{ matrix.config.trt_version }}_${{ matrix.config.build_type }}
+    name: Build TRTEp Linux-x64 CUDA${{ matrix.config.cuda_version }} TRT${{ matrix.config.trt_version }} ${{ matrix.config.build_type }}
     container: ${{ matrix.config.full-image-name }}
     environment: Linux_x64
     env:

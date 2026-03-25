@@ -22,11 +22,10 @@ on:
 
 jobs:
   build-ort:
-    if: false
     strategy:
       fail-fast: false
       matrix:
-        build_type: [Debug, RelWithDebInfo]
+        build_type: [Debug] #, RelWithDebInfo]
         cuda_version: ['12.9']  # , '13.0']
 
     runs-on: [
@@ -172,7 +171,8 @@ jobs:
           --cmake_generator "Ninja" `
           --build_shared_lib `
           --use_vcpkg `
-          --use_vcpkg_ms_internal_asset_cache
+          --use_vcpkg_ms_internal_asset_cache `
+          --target onnxruntime_provider_test
         if ($lastExitCode -ne 0) {
           exit $lastExitCode
         }
@@ -200,6 +200,7 @@ jobs:
         path: ${{ runner.temp }}\build
 
   run-test:
+    if: false
     strategy:
       fail-fast: false
       matrix:

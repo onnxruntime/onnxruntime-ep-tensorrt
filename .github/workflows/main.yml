@@ -265,4 +265,5 @@ jobs:
             "selected_ep_name": "NvTensorRtRtx",
             "default_ep_options": {}
           }
-      run: ${{ github.workspace }}\${{ matrix.build_type }}\onnxruntime_provider_test.exe
+      working-directory: ${{ github.workspace }}\${{ matrix.build_type }}
+      run: onnxruntime_provider_test.exe

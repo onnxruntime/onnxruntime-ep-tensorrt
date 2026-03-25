@@ -257,7 +257,7 @@ jobs:
         ORT_UNIT_TEST_MAIN_DYNAMIC_PLUGIN_EP_CONFIG_JSON: |
           {
             "ep_library_registration_name": "NvTensorRtRtx",
-            "ep_library_path": "${{ toJson(env.TRTEP_LIBRARY_PATH) }}",
+            "ep_library_path": ${{ toJson(env.TRTEP_LIBRARY_PATH) }},
             "selected_ep_name": "NvTensorRtRtx",
             "default_ep_options": {}
           }

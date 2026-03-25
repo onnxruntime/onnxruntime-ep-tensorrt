@@ -11,12 +11,12 @@ on:
     inputs:
       trt_run_id:
         description: 'Run-id of TRT build.'
-        default: '23461258551'
+        default: '23554838816'
         required: true
 
       ort_run_id:
         description: 'Run-id of ORT build.'
-        default: '23522698528'
+        default: '23554838816'
         required: true
 
 
@@ -78,39 +78,10 @@ jobs:
       shell: cmd
       run: python -m pip install -r .\tools\ci_build\github\windows\python\requirements.txt
 
-    # - name: Download CUDA SDK v${{ matrix.cuda_version }}
-    #   shell: pwsh
-    #   run: |
-    #     azcopy.exe cp --recursive "https://lotusscus.blob.core.windows.net/models/cuda_sdk/v${{ matrix.cuda_version }}" ${{ runner.temp }}
-    #     Get-ChildItem -Path "${{ runner.temp }}"
-    #     Get-ChildItem -Path "${{ runner.temp }}\v${{ matrix.cuda_version }}" -Recurse
-    # 
-    # - name: Add CUDA to PATH
-    #   shell: powershell
-    #   run: |
-    #     Write-Host "Adding CUDA to PATH"
-    #     Write-Host "CUDA Path: $env:RUNNER_TEMP\v${{ matrix.cuda_version }}\bin"
-    #     Add-Content -Path $env:GITHUB_PATH -Value "$env:RUNNER_TEMP\v${{ matrix.cuda_version }}\bin"
-    #     Add-Content -Path $env:GITHUB_PATH -Value "$env:RUNNER_TEMP\v${{ matrix.cuda_version }}\extras\CUPTI\lib64"
-
     - name: Setup Node
       uses: actions/setup-node@v6
       with:
         node-version: '24.x'
-
-    # - name: Setup Java
-    #   uses: actions/setup-java@v5
-    #   with:
-    #     distribution: 'temurin'
-    #     java-version: '17'
-    #     architecture: x64
-
-    # - name: Setup DotNet
-    #   uses: actions/setup-dotnet@v5
-    #   env:
-    #     PROCESSOR_ARCHITECTURE: x64
-    #   with:
-    #     dotnet-version: '8.x'
 
     - name: Setup Nuget
       uses: nuget/setup-nuget@v2
@@ -149,18 +120,6 @@ jobs:
           exit $lastExitCode
         }
 
-        # --build_csharp `
-        # --build_java `
-        # --build_wheel `
-        # --enable_cuda_profiling `
-        # --enable_transformers_tool_test `
-        # --use_cuda `
-        # --cuda_home="${{ runner.temp }}\v${{ matrix.cuda_version }}" `
-        # --nvcc_threads 1 `
-        # --cmake_extra_defines CMAKE_CUDA_ARCHITECTURES=${{ env.CMAKE_CUDA_ARCHITECTURES }} `
-        # --cmake_extra_defines onnxruntime_ENABLE_CUDA_EP_INTERNAL_TESTS=ON
-        # --use_binskim_compliant_compile_flags `
-        #
         # Execute the build process
         python.exe ${{ github.workspace }}\tools\ci_build\build.py `
           --update `
@@ -245,7 +204,7 @@ jobs:
     - name: Download TRT Ep
       uses: actions/download-artifact@v7
       with:
-        name: Windows_x64_${{ matrix.build_type }}_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}
+        name: Windows_x64_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}
         run-id: ${{ github.event.inputs.trt_run_id }}
         github-token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -255,6 +214,10 @@ jobs:
         name: 'ort_win_x64_cuda${{ matrix.cuda_version }}_${{ matrix.build_type }}'
         run-id: ${{ github.event.inputs.ort_run_id }}
         github-token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: List workspace files
+      shell: pwsh
+      run: Get-ChildItem -Path "${{ github.workspace }}" -Recurse
 
     - name: Run tests
       shell: pwsh

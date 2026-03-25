@@ -27,7 +27,7 @@ jobs:
     runs-on: [
       "self-hosted",
       "1ES.Pool=onnxruntime-ep-Ubuntu2404-AMD-CPU",
-      "JobId=linux-tensorrtep-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
+      "JobId=trtep-linux-x64-image-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
     name: Build Image CUDA${{ matrix.cuda_version }} TRT${{ matrix.trt_version }}
 
@@ -48,13 +48,13 @@ jobs:
         sparse-checkout-cone-mode: false
 
     - name: Build Docker Image
-      uses: microsoft/onnxruntime-github-actions/build-docker-image@v0.0.11
+      uses: microsoft/onnxruntime-github-actions/build-docker-image@v0.0.12
       id: build_docker_image_step
       with:
         dockerfile: ${{ github.workspace }}/.github/docker/Dockerfile.ubuntu_2404_cuda
         image-name: ghcr.io/onnxruntime/onnxruntime-ep-tensorrt/ubuntu_2404_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version}}
         build-args: 'BASE_IMAGE=nvidia/cuda:${{ matrix.cuda_version }}.1-cudnn-devel-ubuntu24.04 TRT_VERSION=${{ matrix.trt_version}}-1+cuda${{ matrix.cuda_version }} CMAKE_CUDA_ARCHITECTURES=${{ env.CMAKE_CUDA_ARCHITECTURES }} --network=host'
-        pull: true  # Toggle this once onnxruntime-github-actions@v0.0.12 release
+        pull: false
         push: true
         azure-container-registry-name: onnxruntimebuildcache
       env:
@@ -121,7 +121,7 @@ jobs:
           print(f'matrix={json.dumps(matrix)}', file=fh)
 
 
-  build-source:
+  trtep-build:
     strategy:
       fail-fast: false
       matrix:
@@ -130,10 +130,10 @@ jobs:
     runs-on: [
       "self-hosted",
       "1ES.Pool=onnxruntime-ep-Ubuntu2404-AMD-CPU",
-      "JobId=linux-tensorrtep-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
+      "JobId=trtep-linux-x64-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
     needs: build-matrix
-    name: Build ${{ matrix.config.build_type }} CUDA${{ matrix.config.cuda_version }} TRT${{ matrix.config.trt_version }}
+    name: Build_TRTEp_Linux-x64_cuda${{ matrix.config.cuda_version }}_trt{{ matrix.config.trt_version }}_${{ matrix.config.build_type }}
     container: ${{ matrix.config.full-image-name }}
     environment: Linux_x64
     env:

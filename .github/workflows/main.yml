@@ -11,17 +11,17 @@ on:
     inputs:
       trt_run_id:
         description: 'Run-id of TRT build.'
-        default: '23554838816'
+        default: '23561084083' # '23554838816'
         required: true
 
       ort_run_id:
         description: 'Run-id of ORT build.'
-        default: '23554838816'
+        default: '23561084083' # '23554838816'
         required: true
 
 
 jobs:
-  build-ort:
+  win-build-ort:
     if: false
     strategy:
       fail-fast: false
@@ -159,7 +159,7 @@ jobs:
         name: ${{ env.ARTIFACT_NAME }}
         path: ${{ runner.temp }}\build
 
-  run-test:
+  win-run-test:
     strategy:
       fail-fast: false
       matrix:
@@ -230,3 +230,143 @@ jobs:
             "default_ep_options": {}
           }
       run: ${{ github.workspace }}\${{ matrix.build_type }}\onnxruntime_provider_test.exe
+
+
+  linux-build-ort:
+    if: false
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [Debug] #, RelWithDebInfo]
+        cuda_version: ['12.9']  # , '13.0']
+
+    runs-on: [
+      "self-hosted",
+      "1ES.Pool=onnxruntime-ep-Ubuntu2404-AMD-CPU",
+      "JobId=linux-ort-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
+    ]
+    name: Build ORT CUDA${{ matrix.cuda_version }} ${{ matrix.build_type }}
+
+    container: 'ghcr.io/onnxruntime/onnxruntime-ep-tensorrt/ubuntu_2404_cuda12.9_trt10.14.1.48:sha256-463d90a20a513420863d8ba847891eaa5b23eb544dff9863667a503eee6ad850'
+    environment: Linux_x64
+    env:
+      ALLOW_RELEASED_ONNX_OPSET_ONLY: '0'
+      ARTIFACT_NAME: ort_linux_x64_cuda${{ matrix.cuda_version }}_${{ matrix.build_type }}
+      AZCOPY_AUTO_LOGIN_TYPE: ${{ vars.AZCOPY_AUTO_LOGIN_TYPE }}
+      AZCOPY_MSI_CLIENT_ID: ${{ vars.AZCOPY_MSI_CLIENT_ID }}
+      CMAKE_CUDA_ARCHITECTURES: 86
+      ONNXRUNTIME_TEST_GPU_DEVICE_ID: '0'
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v6
+      with:
+        repository: microsoft/onnxruntime
+        ref: 'v1.24.1'
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Setup python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.14'
+        architecture: x64
+
+    - name: Install python modules
+      shell: cmd
+      run: python -m pip install -r ./tools/ci_build/github/linux/python/requirements.txt
+
+    - name: Setup ccache
+      uses: hendrikmuhs/ccache-action@v1.2
+
+    - name: Build and Clean Binaries
+      working-directory: ${{ runner.temp }}
+      run: |
+        # --use_vcpkg \
+        # --use_vcpkg_ms_internal_asset_cache \
+        # Execute the build process
+        python.exe ${{ github.workspace }}/tools/ci_build/build.py \
+          --update \
+          --build \
+          --config ${{ matrix.build_type }} \
+          --build_dir build \
+          --use_cache \
+          --skip_submodule_sync \
+          --parallel \
+          --cmake_generator "Ninja" \
+          --build_shared_lib \
+          --target onnxruntime_provider_test
+
+        # Clean up the output directory before uploading artifacts
+        export outputDir = "${{ runner.temp }}/build/${{ matrix.build_type }}"
+
+        rm -rf "$outputDir/onnxruntime"
+        rm -rf "$outputDir/pybind11"
+        rm -rf "$outputDir/models"
+        rm -rf "$outputDir/vcpkg_installed"
+        rm -rf "$outputDir/_deps"
+        rm -rf "$outputDir/CMakeCache.txt"
+        rm -rf "$outputDir/CMakeFiles"
+        # Remove intermediate object files as in the original script
+        find $outputDir -type f -name '*.obj' -delete
+        find $outputDir -type f -name '*.pch' -delete
+        find $outputDir -type f -name '*.tlog' -delete
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ env.ARTIFACT_NAME }}
+        path: ${{ runner.temp }}/build
+
+
+  linux-run-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [Debug] # , RelWithDebInfo
+        cuda_version: ['12.9'] #, '13.0']
+        trt_version: ['10.14.1.48']
+
+    runs-on: [
+      "self-hosted",
+      "1ES.Pool=onnxruntime-ep-Ubuntu2404-AMD-CPU",
+      "JobId=linux-ort-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
+    ]
+    name: Run Tests CUDA${{ matrix.cuda_version }} ${{ matrix.build_type }}
+
+    environment: Linux_x64
+    env:
+      ALLOW_RELEASED_ONNX_OPSET_ONLY: '0'
+      AZCOPY_AUTO_LOGIN_TYPE: ${{ vars.AZCOPY_AUTO_LOGIN_TYPE }}
+      AZCOPY_MSI_CLIENT_ID: ${{ vars.AZCOPY_MSI_CLIENT_ID }}
+      CMAKE_CUDA_ARCHITECTURES: 86
+      ONNXRUNTIME_TEST_GPU_DEVICE_ID: '0'
+      TRTEP_LIBRARY_PATH: '${{ github.workspace }}/bin/ORTTensorRTEp.so'
+
+    steps:
+    - name: Download TRT Ep
+      uses: actions/download-artifact@v7
+      with:
+        name: Linux_x64_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}
+        run-id: ${{ github.event.inputs.trt_run_id }}
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Download ORT
+      uses: actions/download-artifact@v7
+      with:
+        name: 'ort_linux_x64_cuda${{ matrix.cuda_version }}_${{ matrix.build_type }}'
+        run-id: ${{ github.event.inputs.ort_run_id }}
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: List workspace files
+      run: ls -lR "${{ github.workspace }}"
+
+    - name: Run tests
+      env:
+        ORT_UNIT_TEST_MAIN_DYNAMIC_PLUGIN_EP_CONFIG_JSON: |
+          {
+            "ep_library_registration_name": "NvTensorRtRtx",
+            "ep_library_path": ${{ toJson(env.TRTEP_LIBRARY_PATH) }},
+            "selected_ep_name": "NvTensorRtRtx",
+            "default_ep_options": {}
+          }
+      run: ${{ github.workspace }}/${{ matrix.build_type }}/onnxruntime_provider_test

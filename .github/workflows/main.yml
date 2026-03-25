@@ -229,6 +229,14 @@ jobs:
       TRTEP_LIBRARY_PATH: '${{ github.workspace }}\bin\ORTTensorRTEp.dll'
 
     steps:
+    - name: Download CUDA SDK v${{ matrix.cuda_version }}
+      shell: pwsh
+      run: |
+        azcopy.exe cp --recursive "https://lotusscus.blob.core.windows.net/models/cuda_sdk/v${{ matrix.cuda_version }}" ${{ runner.temp }}
+        Get-ChildItem -Path "${{ runner.temp }}"
+        Get-ChildItem -Path "${{ runner.temp }}\v${{ matrix.cuda_version }}" -Recurse
+        Add-Content -Path $env:GITHUB_PATH -Value "$env:${{ runner.temp }}\v${{ matrix.cuda_version }}\bin"
+
     - name: Download TensorRT-${{ matrix.trt_version }}.Windows.win10.cuda-${{ matrix.cuda_version }}
       shell: pwsh
       run: |

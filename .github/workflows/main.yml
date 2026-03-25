@@ -16,12 +16,13 @@ on:
 
       ort_run_id:
         description: 'Run-id of ORT build.'
-        default: '23507955964'
+        default: '23522698528'
         required: true
 
 
 jobs:
   build-ort:
+    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -200,11 +201,10 @@ jobs:
         path: ${{ runner.temp }}\build
 
   run-test:
-    if: false
     strategy:
       fail-fast: false
       matrix:
-        build_type: [RelWithDebInfo] # Debug, 
+        build_type: [Debug] # , RelWithDebInfo
         cuda_version: ['12.9'] #, '13.0']
         trt_version: ['10.14.1.48']
 
@@ -245,7 +245,7 @@ jobs:
     - name: Download TRT Ep
       uses: actions/download-artifact@v7
       with:
-        pattern: 'Windows_x64_${{ matrix.build_type }}_cuda${{ matrix.cuda_version }}_trt*'
+        name: Windows_x64_${{ matrix.build_type }}_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}
         run-id: ${{ github.event.inputs.trt_run_id }}
         github-token: ${{ secrets.GITHUB_TOKEN }}
 

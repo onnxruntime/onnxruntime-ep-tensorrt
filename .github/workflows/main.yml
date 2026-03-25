@@ -203,8 +203,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        build_type: [Debug] #, RelWithDebInfo]
-        cuda_version: ['12.9']  # , '13.0']
+        build_type: [Debug, RelWithDebInfo]
+        cuda_version: ['12.9', '13.0']
         trt_version: ['10.14.1.48']
 
     runs-on: [
@@ -217,15 +217,10 @@ jobs:
     environment: Windows_x64
     env:
       ALLOW_RELEASED_ONNX_OPSET_ONLY: '0'
-      ARTIFACT_NAME: ort_win_x64_cuda${{ matrix.cuda_version }}_${{ matrix.build_type }}
       AZCOPY_AUTO_LOGIN_TYPE: ${{ vars.AZCOPY_AUTO_LOGIN_TYPE }}
       AZCOPY_MSI_CLIENT_ID: ${{ vars.AZCOPY_MSI_CLIENT_ID }}
       CMAKE_CUDA_ARCHITECTURES: 86
-      DocUpdateNeeded: false
-      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
       ONNXRUNTIME_TEST_GPU_DEVICE_ID: '0'
-      OrtPackageId: Microsoft.ML.OnnxRuntime.Gpu
-      setVcvars: true
       TRTEP_LIBRARY_PATH: '${{ github.workspace }}\bin\ORTTensorRTEp.dll'
 
     steps:
@@ -236,6 +231,7 @@ jobs:
         Get-ChildItem -Path "${{ runner.temp }}"
         Get-ChildItem -Path "${{ runner.temp }}\v${{ matrix.cuda_version }}" -Recurse
         Add-Content -Path $env:GITHUB_PATH -Value "$env:${{ runner.temp }}\v${{ matrix.cuda_version }}\bin"
+        Add-Content -Path $env:GITHUB_PATH -Value "$env:${{ runner.temp }}\v${{ matrix.cuda_version }}\extras\CUPTI\lib64"
 
     - name: Download TensorRT-${{ matrix.trt_version }}.Windows.win10.cuda-${{ matrix.cuda_version }}
       shell: pwsh

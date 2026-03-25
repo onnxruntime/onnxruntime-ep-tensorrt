@@ -233,7 +233,6 @@ jobs:
 
 
   linux-build-ort:
-    if: false
     strategy:
       fail-fast: false
       matrix:

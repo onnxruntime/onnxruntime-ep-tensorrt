@@ -212,7 +212,7 @@ jobs:
       "1ES.Pool=onnxruntime-ep-github-Win",
       "JobId=windows-ort-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
-    name: Run Tests CUDA${{ matrix.cuda_version }}
+    name: Run Tests CUDA${{ matrix.cuda_version }} ${{ matrix.build_type }}
 
     environment: Windows_x64
     env:

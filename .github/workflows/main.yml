@@ -279,7 +279,7 @@ jobs:
         # --use_vcpkg \
         # --use_vcpkg_ms_internal_asset_cache \
         # Execute the build process
-        python.exe ${{ github.workspace }}/tools/ci_build/build.py \
+        python ${{ github.workspace }}/tools/ci_build/build.py \
           --update \
           --build \
           --config ${{ matrix.build_type }} \

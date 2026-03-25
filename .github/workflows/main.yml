@@ -244,11 +244,10 @@ jobs:
     - name: Build and Clean Binaries
       working-directory: ${{ runner.temp }}
       run: |
-        ls -l ${{ github.workspace }}/..
+        ls -lR ${{ github.workspace }}
 
 
   linux-build-ort:
-    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -295,11 +294,14 @@ jobs:
     - name: Build and Clean Binaries
       working-directory: ${{ runner.temp }}
       run: |
-        ls -l ${{ github.workspace }}/..
+        env
+        # Caution with the use of github.workspace here. Reported issue -
+        # https://github.com/actions/runner/issues/2058
+        ls -l $GITHUB_WORKSPACE
         # --use_vcpkg \
         # --use_vcpkg_ms_internal_asset_cache \
         # Execute the build process
-        python ${{ github.workspace }}/tools/ci_build/build.py \
+        python $GITHUB_WORKSPACE/tools/ci_build/build.py \
           --update \
           --build \
           --config ${{ matrix.build_type }} \
@@ -334,7 +336,6 @@ jobs:
 
 
   linux-run-test:
-    if: false
     strategy:
       fail-fast: false
       matrix:

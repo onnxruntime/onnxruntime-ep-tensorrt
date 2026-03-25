@@ -226,6 +226,7 @@ jobs:
       ONNXRUNTIME_TEST_GPU_DEVICE_ID: '0'
       OrtPackageId: Microsoft.ML.OnnxRuntime.Gpu
       setVcvars: true
+      TRTEP_LIBRARY_PATH: '${{ github.workspace }}\bin\ORTTensorRTEp.dll'
 
     steps:
     - name: Download TensorRT-${{ matrix.trt_version }}.Windows.win10.cuda-${{ matrix.cuda_version }}
@@ -256,7 +257,7 @@ jobs:
         ORT_UNIT_TEST_MAIN_DYNAMIC_PLUGIN_EP_CONFIG_JSON: |
           {
             "ep_library_registration_name": "NvTensorRtRtx",
-            "ep_library_path": "${{ toJson(github.workspace) }}\\bin\\ORTTensorRTEp.dll",
+            "ep_library_path": "${{ toJson(env.TRTEP_LIBRARY_PATH) }}",
             "selected_ep_name": "NvTensorRtRtx",
             "default_ep_options": {}
           }

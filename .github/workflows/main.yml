@@ -22,7 +22,6 @@ on:
 
 jobs:
   win-build-ort:
-    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -34,7 +33,8 @@ jobs:
       "1ES.Pool=onnxruntime-ep-github-Win",
       "JobId=windows-ort-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
-    name: Build ORT CUDA${{ matrix.cuda_version }} ${{ matrix.build_type }}
+    name: Win Build ORT CUDA${{ matrix.cuda_version }} ${{ matrix.build_type }}
+    if: false
 
     environment: Windows_x64
     env:
@@ -172,7 +172,8 @@ jobs:
       "1ES.Pool=onnxruntime-ep-github-Win-GPU-A10",
       "JobId=windows-ort-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
-    name: Run Tests CUDA${{ matrix.cuda_version }} ${{ matrix.build_type }}
+    name: Win Run Tests CUDA${{ matrix.cuda_version }} ${{ matrix.build_type }}
+    if: false
 
     environment: Windows_x64
     env:
@@ -229,7 +230,6 @@ jobs:
 
 
   linux-build-ort:
-    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -241,7 +241,7 @@ jobs:
       "1ES.Pool=onnxruntime-ep-Ubuntu2404-AMD-CPU",
       "JobId=linux-ort-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
-    name: Build ORT CUDA${{ matrix.cuda_version }} ${{ matrix.build_type }}
+    name: Linux Build ORT CUDA${{ matrix.cuda_version }} ${{ matrix.build_type }}
 
     container: 'ghcr.io/onnxruntime/onnxruntime-ep-tensorrt/ubuntu_2404_cuda12.9_trt10.14.1.48:sha256-463d90a20a513420863d8ba847891eaa5b23eb544dff9863667a503eee6ad850'
     environment: Linux_x64
@@ -268,7 +268,6 @@ jobs:
         architecture: x64
 
     - name: Install python modules
-      shell: cmd
       run: python -m pip install -r ./tools/ci_build/github/linux/python/requirements.txt
 
     - name: Setup ccache
@@ -315,7 +314,6 @@ jobs:
 
 
   linux-run-test:
-    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -328,7 +326,7 @@ jobs:
       "1ES.Pool=onnxruntime-ep-Ubuntu2404-AMD-CPU",
       "JobId=linux-ort-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
-    name: Run Tests CUDA${{ matrix.cuda_version }} ${{ matrix.build_type }}
+    name: Linux Run Tests CUDA${{ matrix.cuda_version }} ${{ matrix.build_type }}
 
     needs: linux-build-ort
     container: 'ghcr.io/onnxruntime/onnxruntime-ep-tensorrt/ubuntu_2404_cuda12.9_trt10.14.1.48:sha256-463d90a20a513420863d8ba847891eaa5b23eb544dff9863667a503eee6ad850'

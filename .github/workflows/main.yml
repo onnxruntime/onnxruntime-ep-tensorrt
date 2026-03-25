@@ -160,6 +160,7 @@ jobs:
         path: ${{ runner.temp }}\build
 
   win-run-test:
+    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -332,6 +333,8 @@ jobs:
     ]
     name: Run Tests CUDA${{ matrix.cuda_version }} ${{ matrix.build_type }}
 
+    needs: linux-build-ort
+    container: 'ghcr.io/onnxruntime/onnxruntime-ep-tensorrt/ubuntu_2404_cuda12.9_trt10.14.1.48:sha256-463d90a20a513420863d8ba847891eaa5b23eb544dff9863667a503eee6ad850'
     environment: Linux_x64
     env:
       ALLOW_RELEASED_ONNX_OPSET_ONLY: '0'

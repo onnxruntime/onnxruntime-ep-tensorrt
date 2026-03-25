@@ -276,6 +276,7 @@ jobs:
     - name: Build and Clean Binaries
       working-directory: ${{ runner.temp }}
       run: |
+        ls -l ${{ github.workspace }}
         # --use_vcpkg \
         # --use_vcpkg_ms_internal_asset_cache \
         # Execute the build process

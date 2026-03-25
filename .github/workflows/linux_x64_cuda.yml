@@ -147,6 +147,8 @@ jobs:
 
     - name: Setup ccache
       uses: hendrikmuhs/ccache-action@v1.2
+      with:
+        key: ${{ github.job }}-cuda${{ matrix.config.cuda_version }}-trt${{ matrix.config.trt_version }}-${{ matrix.config.build_type }}
 
     - name: Run the build
       run: |

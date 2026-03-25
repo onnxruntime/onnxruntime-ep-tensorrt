@@ -22,26 +22,26 @@ env:
 
 
 jobs:
-  win-build:
+  trtep-build:
     strategy:
       fail-fast: false
       matrix:
-        config: [Debug, RelWithDebInfo]
+        build_type: [Debug, RelWithDebInfo]
         cuda_version: ['12.9', '13.0']
         trt_version: ['10.14.1.48']
 
     runs-on: [
       "self-hosted",
       "1ES.Pool=onnxruntime-ep-github-Win",
-      "JobId=windows-tensorrtep-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
+      "JobId=trtep-win-x64-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
-    name: Windows-${{ matrix.config }}_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}
+    name: Build_TRTEp_Win-x64_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}
 
     environment: Windows_x64
     env:
       AZCOPY_AUTO_LOGIN_TYPE: ${{ vars.AZCOPY_AUTO_LOGIN_TYPE }}
       AZCOPY_MSI_CLIENT_ID: ${{ vars.AZCOPY_MSI_CLIENT_ID }}
-      ARTIFACT_NAME: Windows_x64_${{ matrix.config }}_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}
+      ARTIFACT_NAME: Windows_x64_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}
 
     steps:
     - name: Install Ninja
@@ -91,7 +91,7 @@ jobs:
 
         cmake ^
           -G Ninja ^
-          -DCMAKE_BUILD_TYPE=${{ matrix.config }} ^
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} ^
           -DCMAKE_INSTALL_PREFIX=out/${{ env.ARTIFACT_NAME }} ^
           -DCMAKE_CUDA_COMPILER=${{ runner.temp }}\v${{ matrix.cuda_version }}\bin\nvcc.exe ^
           -DCMAKE_CUDA_ARCHITECTURES=${{ env.CMAKE_CUDA_ARCHITECTURES }} ^
@@ -108,3 +108,193 @@ jobs:
       with:
         name: ${{ env.ARTIFACT_NAME }}
         path: out/${{ env.ARTIFACT_NAME }}
+
+
+  ort-build:
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [Debug, RelWithDebInfo]
+        cuda_version: ['12.9', '13.0']
+
+    runs-on: [
+      "self-hosted",
+      "1ES.Pool=onnxruntime-ep-github-Win",
+      "JobId=ort-win-x64-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
+    ]
+    name: Build_ORT_Win-x64_cuda${{ matrix.cuda_version }}_${{ matrix.build_type }}
+
+    environment: Windows_x64
+    env:
+      ALLOW_RELEASED_ONNX_OPSET_ONLY: '0'
+      AZCOPY_AUTO_LOGIN_TYPE: ${{ vars.AZCOPY_AUTO_LOGIN_TYPE }}
+      AZCOPY_MSI_CLIENT_ID: ${{ vars.AZCOPY_MSI_CLIENT_ID }}
+      ARTIFACT_NAME: ort_win-x64_cuda${{ matrix.cuda_version }}_${{ matrix.build_type }}
+      setVcvars: true
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v6
+      with:
+        repository: microsoft/onnxruntime
+        ref: 'v1.24.1'
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Install Ninja
+      shell: cmd
+      run: |
+        where choco
+        C:\ProgramData\chocolatey\bin\choco sources
+        C:\ProgramData\chocolatey\bin\choco source add -n chocolatey -s 'https://chocolatey.org/api/v2/'
+        C:\ProgramData\chocolatey\bin\choco install ninja
+
+    - name: Setup python
+      uses: actions/setup-python@v6
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        architecture: x64
+
+    - name: Install python modules
+      shell: cmd
+      run: python -m pip install -r .\tools\ci_build\github\windows\python\requirements.txt
+
+    - name: Setup Nuget
+      uses: nuget/setup-nuget@v2
+      with:
+        nuget-version: '6.x'
+
+    - name: NuGet restore
+      shell: cmd
+      run: |
+        nuget restore ${{ github.workspace }}\packages.config ^
+          -ConfigFile ${{ github.workspace }}\NuGet.config ^
+          -PackagesDirectory ${{ runner.temp }}\build\${{ matrix.build_type }}
+
+    - name: Set OnnxRuntimeBuildDirectory
+      shell: pwsh
+      run: |
+        $buildDir = Join-Path ${{ runner.temp }} "build"
+        echo "OnnxRuntimeBuildDirectory=$buildDir" >> $env:GITHUB_ENV
+
+    - name: Locate vcvarsall and Setup Env
+      uses: ./.github/actions/locate-vcvarsall-and-setup-env
+      with:
+        architecture: x64
+
+    - name: Setup sccache
+      uses: mozilla-actions/sccache-action@v0.0.9
+
+    - name: Build and Clean Binaries
+      working-directory: ${{ runner.temp }}
+      shell: pwsh
+      env:
+        SCCACHE_GHA_ENABLED: "true"
+      run: |
+        npm install -g typescript
+        if ($lastExitCode -ne 0) {
+          exit $lastExitCode
+        }
+
+        # Execute the build process
+        python.exe ${{ github.workspace }}\tools\ci_build\build.py `
+          --update `
+          --build `
+          --config ${{ matrix.build_type }} `
+          --build_dir build `
+          --skip_submodule_sync `
+          --parallel `
+          --cmake_generator "Ninja" `
+          --build_shared_lib `
+          --use_vcpkg `
+          --use_vcpkg_ms_internal_asset_cache `
+          --target onnxruntime_provider_test
+        if ($lastExitCode -ne 0) {
+          exit $lastExitCode
+        }
+
+        # Clean up the output directory before uploading artifacts
+        $outputDir = "${{ runner.temp }}\build\${{ matrix.build_type }}"
+        Write-Host "Cleaning up files from $outputDir..."
+
+        Remove-Item -Path "$outputDir\onnxruntime" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path "$outputDir\pybind11" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path "$outputDir\models" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path "$outputDir\vcpkg_installed" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path "$outputDir\_deps" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path "$outputDir\CMakeCache.txt" -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path "$outputDir\CMakeFiles" -Recurse -Force -ErrorAction SilentlyContinue
+        # Remove intermediate object files as in the original script
+        Remove-Item -Path $outputDir -Include "*.obj" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path $outputDir -Include "*.pch" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path $outputDir -Include "*.tlog" -Recurse -Force -ErrorAction SilentlyContinue
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ env.ARTIFACT_NAME }}
+        path: ${{ runner.temp }}\build
+
+
+  run-tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [Debug, RelWithDebInfo]
+        cuda_version: ['12.9', '13.0']
+        trt_version: ['10.14.1.48']
+
+    runs-on: [
+      "self-hosted",
+      "1ES.Pool=onnxruntime-ep-github-Win",
+      "JobId=trtep-win-x64-test-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
+    ]
+    name: Test_TRTEp_Win-x64_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}
+    needs: [trtep-build, ort-build]
+
+    environment: Windows_x64
+    env:
+      ALLOW_RELEASED_ONNX_OPSET_ONLY: '0'
+      AZCOPY_AUTO_LOGIN_TYPE: ${{ vars.AZCOPY_AUTO_LOGIN_TYPE }}
+      AZCOPY_MSI_CLIENT_ID: ${{ vars.AZCOPY_MSI_CLIENT_ID }}
+      ONNXRUNTIME_TEST_GPU_DEVICE_ID: '0'
+      TRTEP_LIBRARY_PATH: '${{ github.workspace }}\bin\ORTTensorRTEp.dll'
+
+    steps:
+    - name: Download CUDA SDK v${{ matrix.cuda_version }}
+      shell: pwsh
+      run: |
+        azcopy.exe cp --recursive "https://lotusscus.blob.core.windows.net/models/cuda_sdk/v${{ matrix.cuda_version }}" ${{ runner.temp }}
+        Get-ChildItem -Path "${{ runner.temp }}"
+        Get-ChildItem -Path "${{ runner.temp }}\v${{ matrix.cuda_version }}" -Recurse
+        Add-Content -Path $env:GITHUB_PATH -Value "$env:${{ runner.temp }}\v${{ matrix.cuda_version }}\bin"
+        Add-Content -Path $env:GITHUB_PATH -Value "$env:${{ runner.temp }}\v${{ matrix.cuda_version }}\extras\CUPTI\lib64"
+
+    - name: Download TensorRT-${{ matrix.trt_version }}.Windows.win10.cuda-${{ matrix.cuda_version }}
+      shell: pwsh
+      run: |
+        azcopy.exe cp --recursive "https://lotusscus.blob.core.windows.net/models/local/TensorRT-${{ matrix.trt_version }}.Windows.win10.cuda-${{ matrix.cuda_version }}" ${{ runner.temp }}
+        Get-ChildItem -Path "${{ runner.temp }}"
+        Get-ChildItem -Path "${{ runner.temp }}\TensorRT-${{ matrix.trt_version }}.Windows.win10.cuda-${{ matrix.cuda_version }}" -Recurse
+        Add-Content -Path $env:GITHUB_PATH -Value "$env:${{ runner.temp }}\TensorRT-${{ matrix.trt_version }}.Windows.win10.cuda-${{ matrix.cuda_version }}\bin"
+
+    - name: Download TRTEp artifacts
+      uses: actions/download-artifact@v7
+      with:
+        name: Windows_x64_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}
+
+    - name: Download ORT artifacts
+      uses: actions/download-artifact@v7
+      with:
+        name: ort_win-x64_cuda${{ matrix.cuda_version }}_${{ matrix.build_type }}
+
+    - name: Run tests
+      shell: pwsh
+      env:
+        ORT_UNIT_TEST_MAIN_DYNAMIC_PLUGIN_EP_CONFIG_JSON: |
+          {
+            "ep_library_registration_name": "NvTensorRtRtx",
+            "ep_library_path": ${{ toJson(env.TRTEP_LIBRARY_PATH) }},
+            "selected_ep_name": "NvTensorRtRtx",
+            "default_ep_options": {}
+          }
+      run: ${{ github.workspace }}\${{ matrix.build_type }}\onnxruntime_provider_test.exe

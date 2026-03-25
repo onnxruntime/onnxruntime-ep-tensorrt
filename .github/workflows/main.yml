@@ -160,7 +160,6 @@ jobs:
         path: ${{ runner.temp }}\build
 
   win-run-test:
-    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -170,7 +169,7 @@ jobs:
 
     runs-on: [
       "self-hosted",
-      "1ES.Pool=onnxruntime-ep-github-Win",
+      "1ES.Pool=onnxruntime-ep-github-Win-GPU-A10",
       "JobId=windows-ort-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
     name: Run Tests CUDA${{ matrix.cuda_version }} ${{ matrix.build_type }}
@@ -206,19 +205,15 @@ jobs:
       uses: actions/download-artifact@v7
       with:
         name: Windows_x64_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}
-        run-id: ${{ github.event.inputs.trt_run_id }}
+        run-id: '23554838816'
         github-token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Download ORT
       uses: actions/download-artifact@v7
       with:
         name: 'ort_win-x64_cuda${{ matrix.cuda_version }}_${{ matrix.build_type }}'
-        run-id: ${{ github.event.inputs.ort_run_id }}
+        run-id: '23554838816'
         github-token: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: List workspace files
-      shell: pwsh
-      run: Get-ChildItem -Path "${{ github.workspace }}" -Recurse
 
     - name: Run tests
       shell: pwsh
@@ -234,6 +229,7 @@ jobs:
 
 
   linux-build-ort:
+    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -319,6 +315,7 @@ jobs:
 
 
   linux-run-test:
+    if: false
     strategy:
       fail-fast: false
       matrix:

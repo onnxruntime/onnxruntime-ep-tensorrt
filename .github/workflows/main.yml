@@ -295,6 +295,8 @@ jobs:
           --build_shared_lib \
           --target onnxruntime_provider_test
 
+        ls -l ${{ runner.temp }}/build
+
         # Clean up the output directory before uploading artifacts
         export outputDir="${{ runner.temp }}/build/${{ matrix.build_type }}"
 
@@ -306,9 +308,9 @@ jobs:
         rm -rf "$outputDir/CMakeCache.txt"
         rm -rf "$outputDir/CMakeFiles"
         # Remove intermediate object files as in the original script
-        find $outputDir -type f -name '*.obj' -delete
-        find $outputDir -type f -name '*.pch' -delete
-        find $outputDir -type f -name '*.tlog' -delete
+        # find $outputDir -type f -name '*.obj' -delete
+        # find $outputDir -type f -name '*.pch' -delete
+        # find $outputDir -type f -name '*.tlog' -delete
 
     - name: Upload build artifacts
       uses: actions/upload-artifact@v7

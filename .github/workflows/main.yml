@@ -160,7 +160,6 @@ jobs:
         path: ${{ runner.temp }}\build
 
   win-run-test:
-    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -219,6 +218,7 @@ jobs:
     - name: Run tests
       shell: pwsh
       env:
+        ORT_UNIT_TEST_MAIN_LOG_LEVEL: 0
         ORT_UNIT_TEST_MAIN_DYNAMIC_PLUGIN_EP_CONFIG_JSON: |
           {
             "ep_library_registration_name": "NvTensorRtRtx",
@@ -227,24 +227,6 @@ jobs:
             "default_ep_options": {}
           }
       run: ${{ github.workspace }}\${{ matrix.build_type }}\onnxruntime_provider_test.exe
-
-
-  try-me:
-    runs-on: ubuntu-latest
-    name: Try Me
-
-    steps:
-    - name: Checkout Code
-      uses: actions/checkout@v6
-      with:
-        repository: microsoft/onnxruntime
-        ref: 'v1.24.1'
-        token: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Build and Clean Binaries
-      working-directory: ${{ runner.temp }}
-      run: |
-        ls -lR ${{ github.workspace }}
 
 
   linux-build-ort:
@@ -314,7 +296,7 @@ jobs:
           --target onnxruntime_provider_test
 
         # Clean up the output directory before uploading artifacts
-        export outputDir = "${{ runner.temp }}/build/${{ matrix.build_type }}"
+        export outputDir="${{ runner.temp }}/build/${{ matrix.build_type }}"
 
         rm -rf "$outputDir/onnxruntime"
         rm -rf "$outputDir/pybind11"

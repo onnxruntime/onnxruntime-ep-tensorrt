@@ -160,7 +160,6 @@ jobs:
         path: ${{ runner.temp }}\build
 
   win-run-test:
-    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -227,7 +226,11 @@ jobs:
             "selected_ep_name": "NvTensorRtRtx",
             "default_ep_options": {}
           }
-      run: ${{ github.workspace }}\${{ matrix.build_type }}\onnxruntime_provider_test.exe
+      run: |
+        Get-ChildItem Env: | Format-Table -AutoSize
+        Get-ChildItem -Path "${{ runner.temp }}"
+        Get-Item -Path "${{ env.TRTEP_LIBRARY_PATH }}"
+        ${{ github.workspace }}\${{ matrix.build_type }}\onnxruntime_provider_test.exe
 
 
   linux-build-ort:
@@ -275,7 +278,6 @@ jobs:
       uses: hendrikmuhs/ccache-action@v1.2
 
     - name: Build and Clean Binaries
-      working-directory: $RUNNER_TEMP
       run: |
         env
         # Caution with the use of github.workspace here. Reported issue -
@@ -296,10 +298,11 @@ jobs:
           --build_shared_lib \
           --target onnxruntime_provider_test
 
-        ls -l $RUNNER_TEMP/build
+        ls -l $GITHUB_WORKSPACE
+        ls -l build
 
         # Clean up the output directory before uploading artifacts
-        export outputDir="$RUNNER_TEMP/build/${{ matrix.build_type }}"
+        export outputDir="./build/${{ matrix.build_type }}"
 
         rm -rf "$outputDir/onnxruntime"
         rm -rf "$outputDir/pybind11"
@@ -317,7 +320,7 @@ jobs:
       uses: actions/upload-artifact@v7
       with:
         name: ${{ env.ARTIFACT_NAME }}
-        path: $RUNNER_TEMP/build
+        path: build
 
 
   linux-run-test:

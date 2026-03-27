@@ -227,10 +227,7 @@ jobs:
             "default_ep_options": {}
           }
       run: |
-        Get-ChildItem Env: | Format-Table -AutoSize
-        $env:Path -split ';'
-        Get-ChildItem -Path "${{ runner.temp }}"
-        Get-Item -Path "${{ env.TRTEP_LIBRARY_PATH }}"
+        Get-ChildItem -Path "${{ github.workspace }}" -Recurse
         ${{ github.workspace }}\${{ matrix.build_type }}\onnxruntime_provider_test.exe
 
 
@@ -312,10 +309,14 @@ jobs:
         rm -rf "$outputDir/_deps"
         rm -rf "$outputDir/CMakeCache.txt"
         rm -rf "$outputDir/CMakeFiles"
-        # Remove intermediate object files as in the original script
+        find $outputDir -type f -name '*.a' -delete
         find $outputDir -type f -name '*.obj' -delete
         find $outputDir -type f -name '*.pch' -delete
         find $outputDir -type f -name '*.tlog' -delete
+
+        # Move the testdata folder under the output folder so
+        # it gets included as part of the artifact
+        mv onnxruntime/test/testdata $outputDir/.
 
     - name: Upload build artifacts
       uses: actions/upload-artifact@v7

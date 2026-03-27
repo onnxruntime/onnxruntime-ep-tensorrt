@@ -355,7 +355,6 @@ jobs:
       AZCOPY_MSI_CLIENT_ID: ${{ vars.AZCOPY_MSI_CLIENT_ID }}
       CMAKE_CUDA_ARCHITECTURES: 86
       ONNXRUNTIME_TEST_GPU_DEVICE_ID: '0'
-      TRTEP_LIBRARY_PATH: '${{ env.GITHUB_WORKSPACE }}/orttrtep/lib/libORTTensorRTEp.so'
 
     steps:
     - name: Download TRT Ep
@@ -379,6 +378,8 @@ jobs:
         env
         ls -lR "${{ env.GITHUB_WORKSPACE }}"
         ls -lR "${{ env.RUNNER_TEMP }}"
+        echo "TRTEP_LIBRARY_PATH='${{ env.GITHUB_WORKSPACE }}/orttrtep/lib/libORTTensorRTEp.so'" >> $GITHUB_ENV
+
 
     - name: Run tests
       env:

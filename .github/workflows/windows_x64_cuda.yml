@@ -201,7 +201,6 @@ jobs:
           --build `
           --config ${{ matrix.build_type }} `
           --build_dir build `
-          --use_cache `
           --skip_submodule_sync `
           --parallel `
           --cmake_generator "Ninja" `

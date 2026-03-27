@@ -212,10 +212,10 @@ jobs:
       run: |
         Get-ChildItem Env: | Format-Table -AutoSize
         $env:Path -split ';'
-        Get-ChildItem -Path "${{ github.workspace }}" -Recurse
-        Get-ChildItem -Path "$GITHUB_WORKSPACE" -Recurse
-        Get-ChildItem -Path "${{ runner.temp }}" -Recurse
-        Get-ChildItem -Path "RUNNER_TEMP" -Recurse
+        Get-ChildItem -Path "${{ github.workspace }}"
+        Get-ChildItem -Path "${{ github.workspace }}/onnxruntime" -Recurse
+        Get-ChildItem -Path "${{ github.workspace }}/orttrtep" -Recurse
+        Get-ChildItem -Path "${{ runner.temp }}"
 
     - name: Run tests
       shell: pwsh
@@ -228,7 +228,7 @@ jobs:
             "selected_ep_name": "NvTensorRtRtx",
             "default_ep_options": {}
           }
-      run: ${{ github.workspace }}\onnxruntime\${{ matrix.build_type }}\onnxruntime_provider_test.exe
+      run: ${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe
 
 
   linux-build-ort:
@@ -352,7 +352,7 @@ jobs:
       AZCOPY_MSI_CLIENT_ID: ${{ vars.AZCOPY_MSI_CLIENT_ID }}
       CMAKE_CUDA_ARCHITECTURES: 86
       ONNXRUNTIME_TEST_GPU_DEVICE_ID: '0'
-      TRTEP_LIBRARY_PATH: '$GITHUB_WORKSPACE/orttrtep/bin/ORTTensorRTEp.so'
+      TRTEP_LIBRARY_PATH: '$GITHUB_WORKSPACE/orttrtep/lib/libORTTensorRTEp.so'
 
     steps:
     - name: Download TRT Ep
@@ -386,4 +386,6 @@ jobs:
             "selected_ep_name": "NvTensorRtRtx",
             "default_ep_options": {}
           }
-      run: $GITHUB_WORKSPACE/onnxruntime/onnxruntime_provider_test
+      run: |
+        chmod +x $GITHUB_WORKSPACE/onnxruntime/onnxruntime_provider_test
+        $GITHUB_WORKSPACE/onnxruntime/onnxruntime_provider_test

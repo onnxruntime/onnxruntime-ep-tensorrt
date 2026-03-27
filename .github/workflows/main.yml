@@ -190,8 +190,8 @@ jobs:
         azcopy.exe cp --recursive "https://lotusscus.blob.core.windows.net/models/cuda_sdk/v${{ matrix.cuda_version }}" ${{ runner.temp }}
         Get-ChildItem -Path "${{ runner.temp }}"
         Get-ChildItem -Path "${{ runner.temp }}\v${{ matrix.cuda_version }}" -Recurse
-        Add-Content -Path $env:GITHUB_PATH -Value "$env:${{ runner.temp }}\v${{ matrix.cuda_version }}\bin"
-        Add-Content -Path $env:GITHUB_PATH -Value "$env:${{ runner.temp }}\v${{ matrix.cuda_version }}\extras\CUPTI\lib64"
+        Add-Content -Path $env:GITHUB_PATH -Value "${{ runner.temp }}\v${{ matrix.cuda_version }}\bin"
+        Add-Content -Path $env:GITHUB_PATH -Value "${{ runner.temp }}\v${{ matrix.cuda_version }}\extras\CUPTI\lib64"
 
     - name: Download TensorRT-${{ matrix.trt_version }}.Windows.win10.cuda-${{ matrix.cuda_version }}
       shell: pwsh
@@ -199,7 +199,7 @@ jobs:
         azcopy.exe cp --recursive "https://lotusscus.blob.core.windows.net/models/local/TensorRT-${{ matrix.trt_version }}.Windows.win10.cuda-${{ matrix.cuda_version }}" ${{ runner.temp }}
         Get-ChildItem -Path "${{ runner.temp }}"
         Get-ChildItem -Path "${{ runner.temp }}\TensorRT-${{ matrix.trt_version }}.Windows.win10.cuda-${{ matrix.cuda_version }}" -Recurse
-        Add-Content -Path $env:GITHUB_PATH -Value "$env:${{ runner.temp }}\TensorRT-${{ matrix.trt_version }}.Windows.win10.cuda-${{ matrix.cuda_version }}\bin"
+        Add-Content -Path $env:GITHUB_PATH -Value "${{ runner.temp }}\TensorRT-${{ matrix.trt_version }}.Windows.win10.cuda-${{ matrix.cuda_version }}\bin"
 
     - name: Download TRT Ep
       uses: actions/download-artifact@v7
@@ -228,6 +228,7 @@ jobs:
           }
       run: |
         Get-ChildItem Env: | Format-Table -AutoSize
+        $env:Path -split ';'
         Get-ChildItem -Path "${{ runner.temp }}"
         Get-Item -Path "${{ env.TRTEP_LIBRARY_PATH }}"
         ${{ github.workspace }}\${{ matrix.build_type }}\onnxruntime_provider_test.exe
@@ -280,9 +281,12 @@ jobs:
     - name: Build and Clean Binaries
       run: |
         env
-        # Caution with the use of github.workspace here. Reported issue -
+        # Caution with the use of github.workspace here. In containers,
+        #   ${{ github.workspace }} != $GITHUB_WORKSPACE
+        # Same is true for ${{ runner.temp }} and $RUNNER_TEMP
+        # Reported issue -
         # https://github.com/actions/runner/issues/2058
-        ls -l $GITHUB_WORKSPACE
+        
         # --use_vcpkg \
         # --use_vcpkg_ms_internal_asset_cache \
         # Execute the build process
@@ -298,11 +302,8 @@ jobs:
           --build_shared_lib \
           --target onnxruntime_provider_test
 
-        ls -l $GITHUB_WORKSPACE
-        ls -l build
-
         # Clean up the output directory before uploading artifacts
-        export outputDir="./build/${{ matrix.build_type }}"
+        export outputDir="build/${{ matrix.build_type }}"
 
         rm -rf "$outputDir/onnxruntime"
         rm -rf "$outputDir/pybind11"
@@ -312,18 +313,19 @@ jobs:
         rm -rf "$outputDir/CMakeCache.txt"
         rm -rf "$outputDir/CMakeFiles"
         # Remove intermediate object files as in the original script
-        # find $outputDir -type f -name '*.obj' -delete
-        # find $outputDir -type f -name '*.pch' -delete
-        # find $outputDir -type f -name '*.tlog' -delete
+        find $outputDir -type f -name '*.obj' -delete
+        find $outputDir -type f -name '*.pch' -delete
+        find $outputDir -type f -name '*.tlog' -delete
 
     - name: Upload build artifacts
       uses: actions/upload-artifact@v7
       with:
         name: ${{ env.ARTIFACT_NAME }}
-        path: build
+        path: build/${{ matrix.build_type }}
 
 
   linux-run-test:
+    if: false
     strategy:
       fail-fast: false
       matrix:

@@ -267,8 +267,8 @@ jobs:
         azcopy.exe cp --recursive "https://lotusscus.blob.core.windows.net/models/cuda_sdk/v${{ matrix.cuda_version }}" ${{ runner.temp }}
         Get-ChildItem -Path "${{ runner.temp }}"
         Get-ChildItem -Path "${{ runner.temp }}\v${{ matrix.cuda_version }}" -Recurse
-        Add-Content -Path $env:GITHUB_PATH -Value "$env:${{ runner.temp }}\v${{ matrix.cuda_version }}\bin"
-        Add-Content -Path $env:GITHUB_PATH -Value "$env:${{ runner.temp }}\v${{ matrix.cuda_version }}\extras\CUPTI\lib64"
+        Add-Content -Path $env:GITHUB_PATH -Value "${{ runner.temp }}\v${{ matrix.cuda_version }}\bin"
+        Add-Content -Path $env:GITHUB_PATH -Value "${{ runner.temp }}\v${{ matrix.cuda_version }}\extras\CUPTI\lib64"
 
     - name: Download TensorRT-${{ matrix.trt_version }}.Windows.win10.cuda-${{ matrix.cuda_version }}
       shell: pwsh
@@ -276,7 +276,7 @@ jobs:
         azcopy.exe cp --recursive "https://lotusscus.blob.core.windows.net/models/local/TensorRT-${{ matrix.trt_version }}.Windows.win10.cuda-${{ matrix.cuda_version }}" ${{ runner.temp }}
         Get-ChildItem -Path "${{ runner.temp }}"
         Get-ChildItem -Path "${{ runner.temp }}\TensorRT-${{ matrix.trt_version }}.Windows.win10.cuda-${{ matrix.cuda_version }}" -Recurse
-        Add-Content -Path $env:GITHUB_PATH -Value "$env:${{ runner.temp }}\TensorRT-${{ matrix.trt_version }}.Windows.win10.cuda-${{ matrix.cuda_version }}\bin"
+        Add-Content -Path $env:GITHUB_PATH -Value "${{ runner.temp }}\TensorRT-${{ matrix.trt_version }}.Windows.win10.cuda-${{ matrix.cuda_version }}\bin"
 
     - name: Download TRTEp artifacts
       uses: actions/download-artifact@v7

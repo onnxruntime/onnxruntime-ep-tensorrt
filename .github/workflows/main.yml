@@ -395,8 +395,8 @@ jobs:
     - name: List workspace files
       run: |
         env
-        ls -lR "${{ env.GITHUB_WORKSPACE }}"
-        echo "TRTEP_LIBRARY_PATH='${{ env.GITHUB_WORKSPACE }}/orttrtep/lib/libORTTensorRTEp.so'" >> $GITHUB_ENV
+        ls -lR "$GITHUB_WORKSPACE"
+        echo "TRTEP_LIBRARY_PATH='$GITHUB_WORKSPACE/orttrtep/lib/libORTTensorRTEp.so'" >> $GITHUB_ENV
 
     - name: Run tests
       env:
@@ -409,5 +409,5 @@ jobs:
           }
       run: |
         env
-        chmod +x ${{ env.GITHUB_WORKSPACE }}/onnxruntime/onnxruntime_provider_test
-        ${{ env.GITHUB_WORKSPACE }}/onnxruntime/onnxruntime_provider_test
+        chmod +x $GITHUB_WORKSPACE/onnxruntime/onnxruntime_provider_test
+        $GITHUB_WORKSPACE/onnxruntime/onnxruntime_provider_test

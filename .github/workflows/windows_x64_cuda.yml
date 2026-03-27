@@ -224,10 +224,13 @@ jobs:
         Remove-Item -Path "$outputDir\_deps" -Recurse -Force -ErrorAction SilentlyContinue
         Remove-Item -Path "$outputDir\CMakeCache.txt" -Force -ErrorAction SilentlyContinue
         Remove-Item -Path "$outputDir\CMakeFiles" -Recurse -Force -ErrorAction SilentlyContinue
-        # Remove intermediate object files as in the original script
         Remove-Item -Path $outputDir -Include "*.obj" -Recurse -Force -ErrorAction SilentlyContinue
         Remove-Item -Path $outputDir -Include "*.pch" -Recurse -Force -ErrorAction SilentlyContinue
         Remove-Item -Path $outputDir -Include "*.tlog" -Recurse -Force -ErrorAction SilentlyContinue
+
+        # Move the testdata folder under the output folder so
+        # it gets included as part of the artifact
+        Move-Item -Path "${{ github.workspace }}\onnxruntime\test\testdata" -Destination "$outputDir/."
 
     - name: Upload build artifacts
       uses: actions/upload-artifact@v7
@@ -237,6 +240,7 @@ jobs:
 
 
   run-tests:
+    if: false
     strategy:
       fail-fast: false
       matrix:

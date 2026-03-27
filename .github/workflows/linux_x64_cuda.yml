@@ -176,3 +176,98 @@ jobs:
       with:
         name: ${{ env.ARTIFACT_NAME }}
         path: out/${{ env.ARTIFACT_NAME }}
+
+
+  ort-build:
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJson(needs.build-matrix.outputs.matrix) }}
+
+    runs-on: [
+      "self-hosted",
+      "1ES.Pool=onnxruntime-ep-Ubuntu2404-AMD-CPU",
+      "JobId=ort-linux-x64-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
+    ]
+    needs: build-matrix
+    name: Build ORT Linux-x64 CUDA${{ matrix.config.cuda_version }} ${{ matrix.config.build_type }}
+
+    container: ${{ matrix.config.full-image-name }}
+    environment: Linux_x64
+    env:
+      ALLOW_RELEASED_ONNX_OPSET_ONLY: '0'
+      ARTIFACT_NAME: ort_linux_x64_cuda${{ matrix.config.cuda_version }}_${{ matrix.config.build_type }}
+      AZCOPY_AUTO_LOGIN_TYPE: ${{ vars.AZCOPY_AUTO_LOGIN_TYPE }}
+      AZCOPY_MSI_CLIENT_ID: ${{ vars.AZCOPY_MSI_CLIENT_ID }}
+      CMAKE_CUDA_ARCHITECTURES: 86
+      ONNXRUNTIME_TEST_GPU_DEVICE_ID: '0'
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v6
+      with:
+        repository: microsoft/onnxruntime
+        ref: 'v1.24.1'
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Setup python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.14'
+        architecture: x64
+
+    - name: Install python modules
+      run: python -m pip install -r ./tools/ci_build/github/linux/python/requirements.txt
+
+    - name: Setup ccache
+      uses: hendrikmuhs/ccache-action@v1.2
+      with:
+        key: ${{ github.job }}-cuda${{ matrix.config.cuda_version }}-trt${{ matrix.config.trt_version }}-${{ matrix.config.build_type }}
+
+    - name: Build and Clean Binaries
+      run: |
+        env
+        # Caution with the use of github.workspace here. In containers,
+        #   ${{ github.workspace }} != $GITHUB_WORKSPACE
+        # Same is true for ${{ runner.temp }} and $RUNNER_TEMP
+        # Reported issue -
+        # https://github.com/actions/runner/issues/2058
+        
+        # Execute the build process
+        python $GITHUB_WORKSPACE/tools/ci_build/build.py \
+          --update \
+          --build \
+          --config ${{ matrix.config.build_type }} \
+          --build_dir build \
+          --use_cache \
+          --skip_submodule_sync \
+          --parallel \
+          --cmake_generator "Ninja" \
+          --build_shared_lib \
+          --target onnxruntime_provider_test
+
+        # Clean up the output directory before uploading artifacts
+        export outputDir="build/${{ matrix.config.build_type }}"
+
+        rm -rf "$outputDir/_deps"
+        rm -rf "$outputDir/CMakeCache.txt"
+        rm -rf "$outputDir/CMakeFiles"
+        rm -rf "$outputDir/lib"
+        rm -rf "$outputDir/models"
+        rm -rf "$outputDir/onnxruntime"
+        rm -rf "$outputDir/pybind11"
+        rm -rf "$outputDir/vcpkg_installed"
+        find $outputDir -type f -name '*.a' -delete
+        find $outputDir -type f -name '*.obj' -delete
+        find $outputDir -type f -name '*.pch' -delete
+        find $outputDir -type f -name '*.tlog' -delete
+
+        # Move the testdata folder under the output folder so
+        # it gets included as part of the artifact
+        mv onnxruntime/test/testdata $outputDir/.
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ env.ARTIFACT_NAME }}
+        path: build/${{ matrix.config.build_type }}

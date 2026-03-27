@@ -268,6 +268,8 @@ jobs:
 
     - name: Setup ccache
       uses: hendrikmuhs/ccache-action@v1.2
+      with:
+        key: ${{ github.job }}-cuda${{ matrix.cuda_version }}-trt${{ matrix.trt_version }}-${{ matrix.build_type }}
 
     - name: Build and Clean Binaries
       run: |
@@ -296,6 +298,7 @@ jobs:
         # Clean up the output directory before uploading artifacts
         export outputDir="build/${{ matrix.build_type }}"
 
+        rm -rf "$outputDir/lib"
         rm -rf "$outputDir/onnxruntime"
         rm -rf "$outputDir/pybind11"
         rm -rf "$outputDir/models"

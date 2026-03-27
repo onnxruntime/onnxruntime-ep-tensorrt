@@ -217,6 +217,14 @@ jobs:
         Get-ChildItem -Path "${{ github.workspace }}/orttrtep" -Recurse
         Get-ChildItem -Path "${{ runner.temp }}"
 
+    - name: Download WinDepends
+      uses: robinraju/release-downloader@v1
+      with:
+        repository: hfiref0x/WinDepends
+        fileName: 'WinDepends_v1.0.0.2512_beta_snapshot.zip'
+        tag: '2512-beta'
+        extract: true
+
     - name: Run tests
       shell: cmd
       env:
@@ -231,6 +239,11 @@ jobs:
       run: |
         call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
         dumpbin.exe /dependents ${{ env.TRTEP_LIBRARY_PATH }}
+        dumpbin.exe /dependents ${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe
+        WinDepends.exe ${{ env.TRTEP_LIBRARY_PATH }} -o ORTTensorRTEp.json
+        WinDepends.exe ${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe -o onnxruntime_provider_test.json
+        type ORTTensorRTEp.json
+        type onnxruntime_provider_test.json
         ${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe
 
 
@@ -377,9 +390,7 @@ jobs:
       run: |
         env
         ls -lR "${{ env.GITHUB_WORKSPACE }}"
-        ls -lR "${{ env.RUNNER_TEMP }}"
         echo "TRTEP_LIBRARY_PATH='${{ env.GITHUB_WORKSPACE }}/orttrtep/lib/libORTTensorRTEp.so'" >> $GITHUB_ENV
-
 
     - name: Run tests
       env:
@@ -391,5 +402,6 @@ jobs:
             "default_ep_options": {}
           }
       run: |
+        env
         chmod +x ${{ env.GITHUB_WORKSPACE }}/onnxruntime/onnxruntime_provider_test
         ${{ env.GITHUB_WORKSPACE }}/onnxruntime/onnxruntime_provider_test

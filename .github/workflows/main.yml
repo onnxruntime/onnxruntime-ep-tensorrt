@@ -218,7 +218,7 @@ jobs:
         Get-ChildItem -Path "${{ runner.temp }}"
 
     - name: Run tests
-      shell: pwsh
+      shell: cmd
       env:
         ORT_UNIT_TEST_MAIN_LOG_LEVEL: 0
         ORT_UNIT_TEST_MAIN_DYNAMIC_PLUGIN_EP_CONFIG_JSON: |
@@ -228,7 +228,9 @@ jobs:
             "selected_ep_name": "NvTensorRtRtx",
             "default_ep_options": {}
           }
-      run: ${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe
+      run: |
+        call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+        ${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe
 
 
   linux-build-ort:
@@ -352,7 +354,7 @@ jobs:
       AZCOPY_MSI_CLIENT_ID: ${{ vars.AZCOPY_MSI_CLIENT_ID }}
       CMAKE_CUDA_ARCHITECTURES: 86
       ONNXRUNTIME_TEST_GPU_DEVICE_ID: '0'
-      TRTEP_LIBRARY_PATH: '$GITHUB_WORKSPACE/orttrtep/lib/libORTTensorRTEp.so'
+      TRTEP_LIBRARY_PATH: '${{ env.GITHUB_WORKSPACE }}/orttrtep/lib/libORTTensorRTEp.so'
 
     steps:
     - name: Download TRT Ep
@@ -374,8 +376,8 @@ jobs:
     - name: List workspace files
       run: |
         env
-        ls -lR "$GITHUB_WORKSPACE"
-        ls -lR "$RUNNER_TEMP"
+        ls -lR "${{ env.GITHUB_WORKSPACE }}"
+        ls -lR "${{ env.RUNNER_TEMP }}"
 
     - name: Run tests
       env:
@@ -387,5 +389,5 @@ jobs:
             "default_ep_options": {}
           }
       run: |
-        chmod +x $GITHUB_WORKSPACE/onnxruntime/onnxruntime_provider_test
-        $GITHUB_WORKSPACE/onnxruntime/onnxruntime_provider_test
+        chmod +x ${{ env.GITHUB_WORKSPACE }}/onnxruntime/onnxruntime_provider_test
+        ${{ env.GITHUB_WORKSPACE }}/onnxruntime/onnxruntime_provider_test

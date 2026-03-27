@@ -233,7 +233,7 @@ jobs:
       uses: actions/upload-artifact@v7
       with:
         name: ${{ env.ARTIFACT_NAME }}
-        path: ${{ runner.temp }}\build
+        path: ${{ runner.temp }}\build\${{ matrix.build_type }}
 
 
   run-tests:

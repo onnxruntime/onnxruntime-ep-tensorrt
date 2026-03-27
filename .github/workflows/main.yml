@@ -8,16 +8,6 @@ concurrency:
 
 on:
   workflow_dispatch:
-    inputs:
-      trt_run_id:
-        description: 'Run-id of TRT build.'
-        default: '23561084083' # '23554838816'
-        required: true
-
-      ort_run_id:
-        description: 'Run-id of ORT build.'
-        default: '23561084083' # '23554838816'
-        required: true
 
 
 jobs:
@@ -157,7 +147,8 @@ jobs:
       uses: actions/upload-artifact@v7
       with:
         name: ${{ env.ARTIFACT_NAME }}
-        path: ${{ runner.temp }}\build
+        path: ${{ runner.temp }}\build\${{ matrix.build_type }}
+
 
   win-run-test:
     strategy:
@@ -181,7 +172,7 @@ jobs:
       AZCOPY_MSI_CLIENT_ID: ${{ vars.AZCOPY_MSI_CLIENT_ID }}
       CMAKE_CUDA_ARCHITECTURES: 86
       ONNXRUNTIME_TEST_GPU_DEVICE_ID: '0'
-      TRTEP_LIBRARY_PATH: '${{ github.workspace }}\bin\ORTTensorRTEp.dll'
+      TRTEP_LIBRARY_PATH: '${{ github.workspace }}\orttrtep\bin\ORTTensorRTEp.dll'
 
     steps:
     - name: Download CUDA SDK v${{ matrix.cuda_version }}
@@ -207,6 +198,7 @@ jobs:
         name: Windows_x64_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}
         run-id: '23554838816'
         github-token: ${{ secrets.GITHUB_TOKEN }}
+        path: orttrtep
 
     - name: Download ORT
       uses: actions/download-artifact@v7
@@ -214,6 +206,7 @@ jobs:
         name: 'ort_win-x64_cuda${{ matrix.cuda_version }}_${{ matrix.build_type }}'
         run-id: '23554838816'
         github-token: ${{ secrets.GITHUB_TOKEN }}
+        path: onnxruntime
 
     - name: Run tests
       shell: pwsh
@@ -228,10 +221,11 @@ jobs:
           }
       run: |
         Get-ChildItem -Path "${{ github.workspace }}" -Recurse
-        ${{ github.workspace }}\${{ matrix.build_type }}\onnxruntime_provider_test.exe
+        ${{ github.workspace }}\onnxruntime\${{ matrix.build_type }}\onnxruntime_provider_test.exe
 
 
   linux-build-ort:
+    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -326,7 +320,6 @@ jobs:
 
 
   linux-run-test:
-    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -350,22 +343,24 @@ jobs:
       AZCOPY_MSI_CLIENT_ID: ${{ vars.AZCOPY_MSI_CLIENT_ID }}
       CMAKE_CUDA_ARCHITECTURES: 86
       ONNXRUNTIME_TEST_GPU_DEVICE_ID: '0'
-      TRTEP_LIBRARY_PATH: '${{ github.workspace }}/bin/ORTTensorRTEp.so'
+      TRTEP_LIBRARY_PATH: '${{ github.workspace }}/orttrtep/bin/ORTTensorRTEp.so'
 
     steps:
     - name: Download TRT Ep
       uses: actions/download-artifact@v7
       with:
         name: Linux_x64_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}
-        run-id: ${{ github.event.inputs.trt_run_id }}
+        run-id: '23561084083'
         github-token: ${{ secrets.GITHUB_TOKEN }}
+        path: orttrtep
 
     - name: Download ORT
       uses: actions/download-artifact@v7
       with:
         name: 'ort_linux_x64_cuda${{ matrix.cuda_version }}_${{ matrix.build_type }}'
-        run-id: ${{ github.event.inputs.ort_run_id }}
+        run-id: '23626033669'
         github-token: ${{ secrets.GITHUB_TOKEN }}
+        path: onnxruntime
 
     - name: List workspace files
       run: ls -lR "${{ github.workspace }}"
@@ -379,4 +374,4 @@ jobs:
             "selected_ep_name": "NvTensorRtRtx",
             "default_ep_options": {}
           }
-      run: ${{ github.workspace }}/${{ matrix.build_type }}/onnxruntime_provider_test
+      run: ${{ github.workspace }}/onnxruntime/onnxruntime_provider_test

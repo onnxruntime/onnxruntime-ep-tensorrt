@@ -175,6 +175,12 @@ jobs:
       TRTEP_LIBRARY_PATH: '${{ github.workspace }}\orttrtep\bin\ORTTensorRTEp.dll'
 
     steps:
+    - uses: actions/setup-dotnet@v5
+      env:
+        PROCESSOR_ARCHITECTURE: x64
+      with:
+        dotnet-version: '8.x'
+
     - name: Download CUDA SDK v${{ matrix.cuda_version }}
       shell: pwsh
       run: |

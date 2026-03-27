@@ -160,7 +160,7 @@ jobs:
 
     runs-on: [
       "self-hosted",
-      "1ES.Pool=onnxruntime-ep-github-Win-GPU-A10",
+      "1ES.Pool=onnxruntime-ep-github-Win",
       "JobId=windows-ort-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
     name: Win Run Tests CUDA${{ matrix.cuda_version }} ${{ matrix.build_type }}
@@ -196,7 +196,7 @@ jobs:
       uses: actions/download-artifact@v7
       with:
         name: Windows_x64_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}
-        run-id: '23554838816'
+        run-id: '68860936244'
         github-token: ${{ secrets.GITHUB_TOKEN }}
         path: orttrtep
 
@@ -204,9 +204,18 @@ jobs:
       uses: actions/download-artifact@v7
       with:
         name: 'ort_win-x64_cuda${{ matrix.cuda_version }}_${{ matrix.build_type }}'
-        run-id: '23554838816'
+        run-id: '68860936244'
         github-token: ${{ secrets.GITHUB_TOKEN }}
         path: onnxruntime
+
+    - name: List workspace files
+      run: |
+        Get-ChildItem Env: | Format-Table -AutoSize
+        $env:Path -split ';'
+        Get-ChildItem -Path "${{ github.workspace }}" -Recurse
+        Get-ChildItem -Path "$GITHUB_WORKSPACE" -Recurse
+        Get-ChildItem -Path "${{ runner.temp }}" -Recurse
+        Get-ChildItem -Path "RUNNER_TEMP" -Recurse
 
     - name: Run tests
       shell: pwsh
@@ -219,9 +228,7 @@ jobs:
             "selected_ep_name": "NvTensorRtRtx",
             "default_ep_options": {}
           }
-      run: |
-        Get-ChildItem -Path "${{ github.workspace }}" -Recurse
-        ${{ github.workspace }}\onnxruntime\${{ matrix.build_type }}\onnxruntime_provider_test.exe
+      run: ${{ github.workspace }}\onnxruntime\${{ matrix.build_type }}\onnxruntime_provider_test.exe
 
 
   linux-build-ort:
@@ -352,7 +359,7 @@ jobs:
       uses: actions/download-artifact@v7
       with:
         name: Linux_x64_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}
-        run-id: '23561084083'
+        run-id: '23628836210'
         github-token: ${{ secrets.GITHUB_TOKEN }}
         path: orttrtep
 
@@ -360,12 +367,17 @@ jobs:
       uses: actions/download-artifact@v7
       with:
         name: 'ort_linux_x64_cuda${{ matrix.cuda_version }}_${{ matrix.build_type }}'
-        run-id: '23626033669'
+        run-id: '23628836210'
         github-token: ${{ secrets.GITHUB_TOKEN }}
         path: onnxruntime
 
     - name: List workspace files
-      run: ls -lR "${{ github.workspace }}"
+      run: |
+        env
+        ls -lR "${{ github.workspace }}"
+        ls -lR "$GITHUB_WORKSPACE"
+        ls -lR "${{ runner.temp }}"
+        ls -lR "$RUNNER_TEMP"
 
     - name: Run tests
       env:

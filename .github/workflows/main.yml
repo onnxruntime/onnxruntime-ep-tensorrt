@@ -175,15 +175,46 @@ jobs:
       TRTEP_LIBRARY_PATH: '${{ github.workspace }}\orttrtep\bin\ORTTensorRTEp.dll'
 
     steps:
-    - name: Setup .Net
-      uses: actions/setup-dotnet@v5
-      env:
-        PROCESSOR_ARCHITECTURE: x64
-      with:
-        dotnet-version: '10.x'
+    # - name: Setup .Net
+    #   uses: actions/setup-dotnet@v5
+    #   env:
+    #     PROCESSOR_ARCHITECTURE: x64
+    #   with:
+    #     dotnet-version: '10.x'
 
     - name: Install WinDbg
-      run: winget install --id=Microsoft.WinDbg -e
+      shell: pwsh
+      run: |
+        $OutDir = "."
+        $Arch = "x64"
+
+        if (!(Test-Path $OutDir)) {
+            $null = mkdir $OutDir
+        }
+
+        # Download the appinstaller to find the current uri for the msixbundle
+        Invoke-WebRequest https://aka.ms/windbg/download -OutFile $OutDir\windbg.appinstaller
+
+        # Download the msixbundle
+        $msixBundleUri = ([xml](Get-Content $OutDir\windbg.appinstaller)).AppInstaller.MainBundle.Uri
+
+        if ($PSVersionTable.PSVersion.Major -lt 6) {
+            # This is a workaround to get better performance on older versions of PowerShell
+            $ProgressPreference = 'SilentlyContinue'
+        }
+
+        # Download the msixbundle (but name as zip for older versions of Expand-Archive
+        Invoke-WebRequest $msixBundleUri -OutFile $OutDir\windbg.zip
+
+        # Extract the 3 msix files (plus other files)
+        Expand-Archive -DestinationPath $OutDir\UnzippedBundle $OutDir\windbg.zip
+
+        # Rename msix (for older versions of Expand-Archive) and extract the debugger
+        Move-Item "$OutDir\UnzippedBundle\windbg_win-$Arch.msix" "$OutDir\UnzippedBundle\windbg_win-$Arch.zip"
+        Expand-Archive -Path "$OutDir\UnzippedBundle\windbg_win-$Arch.zip" -DestinationPath "$OutDir\windbg"
+
+        # Now you can run:
+        # & $OutDir\windbg\DbgX.Shell.exe
 
     - name: Setup msys2
       uses: msys2/setup-msys2@v2

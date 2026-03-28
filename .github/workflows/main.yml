@@ -151,7 +151,6 @@ jobs:
 
 
   win-run-test:
-    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -181,6 +180,10 @@ jobs:
         PROCESSOR_ARCHITECTURE: x64
       with:
         dotnet-version: '10.x'
+
+    - name: Setup msys2
+      uses: msys2/setup-msys2@v2
+      id: setup-msys2
 
     - name: Download CUDA SDK v${{ matrix.cuda_version }}
       shell: pwsh
@@ -216,14 +219,14 @@ jobs:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         path: onnxruntime
 
-    - name: List workspace files
-      run: |
-        Get-ChildItem Env: | Format-Table -AutoSize
-        $env:Path -split ';'
-        Get-ChildItem -Path "${{ github.workspace }}"
-        Get-ChildItem -Path "${{ github.workspace }}/onnxruntime" -Recurse
-        Get-ChildItem -Path "${{ github.workspace }}/orttrtep" -Recurse
-        Get-ChildItem -Path "${{ runner.temp }}"
+    # - name: List workspace files
+    #   run: |
+    #     Get-ChildItem Env: | Format-Table -AutoSize
+    #     $env:Path -split ';'
+    #     Get-ChildItem -Path "${{ github.workspace }}"
+    #     Get-ChildItem -Path "${{ github.workspace }}/onnxruntime" -Recurse
+    #     Get-ChildItem -Path "${{ github.workspace }}/orttrtep" -Recurse
+    #     Get-ChildItem -Path "${{ runner.temp }}"
 
     # - name: Download WinDepends
     #   uses: robinraju/release-downloader@v1
@@ -236,7 +239,7 @@ jobs:
     # WinDepends.exe ${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe -o onnxruntime_provider_test.json
 
     - name: Run tests
-      shell: cmd
+      shell: pwsh
       env:
         ORT_UNIT_TEST_MAIN_LOG_LEVEL: 0
         ORT_UNIT_TEST_MAIN_DYNAMIC_PLUGIN_EP_CONFIG_JSON: |
@@ -247,15 +250,15 @@ jobs:
             "default_ep_options": {}
           }
       run: |
-        call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
-        where ctest
-
-        ${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe ^
+        ${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe `
           --gtest_output=xml:onnxruntime_provider_test.exe.${{ matrix.build_type }}.results.xml
 
     - name: Setup tmate session
       uses: mxschmitt/action-tmate@v3
       timeout-minutes: 60
+      with:
+        sudo: false
+        msys2-location: ${{ steps.setup-msys2.outputs.msys2-location }}
 
     - name: Upload build artifacts
       if: success() || failure()
@@ -365,6 +368,7 @@ jobs:
 
 
   linux-run-test:
+    if: false
     strategy:
       fail-fast: false
       matrix:

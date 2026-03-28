@@ -155,14 +155,15 @@ jobs:
       fail-fast: false
       matrix:
         build_type: [Debug] # , RelWithDebInfo
-        cuda_version: ['13.0'] # , '12.9'
+        cuda_version: ['12.9'] # '13.0'
         trt_version: ['10.14.1.48']
 
-    runs-on: [
-      "self-hosted",
-      "1ES.Pool=onnxruntime-ep-github-Win",
-      "JobId=windows-ort-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
-    ]
+    # runs-on: [
+    #   "self-hosted",
+    #   "1ES.Pool=onnxruntime-ep-github-Win",
+    #   "JobId=windows-ort-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
+    # ]
+    runs-on: windows-latest
     name: Win Run Tests CUDA${{ matrix.cuda_version }} ${{ matrix.build_type }}
 
     environment: Windows_x64
@@ -207,7 +208,7 @@ jobs:
       uses: actions/download-artifact@v7
       with:
         name: Windows_x64_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}
-        run-id: '23632444871'
+        run-id: '23678348896'
         github-token: ${{ secrets.GITHUB_TOKEN }}
         path: orttrtep
 
@@ -215,7 +216,7 @@ jobs:
       uses: actions/download-artifact@v7
       with:
         name: 'ort_win-x64_cuda${{ matrix.cuda_version }}_${{ matrix.build_type }}'
-        run-id: '23632444871'
+        run-id: '23678348896'
         github-token: ${{ secrets.GITHUB_TOKEN }}
         path: onnxruntime
 
@@ -255,19 +256,20 @@ jobs:
 
     - name: Setup tmate session
       uses: mxschmitt/action-tmate@v3
+      if: always()
       timeout-minutes: 60
       with:
         sudo: false
         msys2-location: ${{ steps.setup-msys2.outputs.msys2-location }}
 
-    - name: Upload build artifacts
-      if: success() || failure()
-      uses: actions/upload-artifact@v7
-      with:
-        name: depends
-        path: |
-          ORTTensorRTEp.json
-          onnxruntime_provider_test.json
+    # - name: Upload build artifacts
+    #   if: success() || failure()
+    #   uses: actions/upload-artifact@v7
+    #   with:
+    #     name: depends
+    #     path: |
+    #       ORTTensorRTEp.json
+    #       onnxruntime_provider_test.json
 
   linux-build-ort:
     if: false

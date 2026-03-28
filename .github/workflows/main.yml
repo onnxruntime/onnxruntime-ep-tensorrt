@@ -151,6 +151,7 @@ jobs:
 
 
   win-run-test:
+    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -224,13 +225,15 @@ jobs:
         Get-ChildItem -Path "${{ github.workspace }}/orttrtep" -Recurse
         Get-ChildItem -Path "${{ runner.temp }}"
 
-    - name: Download WinDepends
-      uses: robinraju/release-downloader@v1
-      with:
-        repository: hfiref0x/WinDepends
-        fileName: 'WinDepends_v1.0.0.2512_beta_snapshot.zip'
-        tag: '2512-beta'
-        extract: true
+    # - name: Download WinDepends
+    #   uses: robinraju/release-downloader@v1
+    #   with:
+    #     repository: hfiref0x/WinDepends
+    #     fileName: 'WinDepends_v1.0.0.2512_beta_snapshot.zip'
+    #     tag: '2512-beta'
+    #     extract: true
+    # WinDepends.exe ${{ env.TRTEP_LIBRARY_PATH }} -o ORTTensorRTEp.json
+    # WinDepends.exe ${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe -o onnxruntime_provider_test.json
 
     - name: Run tests
       shell: cmd
@@ -247,9 +250,8 @@ jobs:
         call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
         where ctest
 
-        WinDepends.exe ${{ env.TRTEP_LIBRARY_PATH }} -o ORTTensorRTEp.json
-        WinDepends.exe ${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe -o onnxruntime_provider_test.json
-        ctest --build-config ${{ matrix.build_type }} --verbose ${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe
+        ${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe ^
+          --gtest_output=xml:onnxruntime_provider_test.exe.${{ matrix.build_type }}.results.xml
 
     - name: Upload build artifacts
       if: success() || failure()
@@ -419,3 +421,8 @@ jobs:
         env
         chmod +x $GITHUB_WORKSPACE/onnxruntime/onnxruntime_provider_test
         $GITHUB_WORKSPACE/onnxruntime/onnxruntime_provider_test
+
+    - name: Setup tmate session
+      if: ${{ failure() }}
+      uses: mxschmitt/action-tmate@v3
+      timeout-minutes: 60

@@ -253,6 +253,10 @@ jobs:
         ${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe ^
           --gtest_output=xml:onnxruntime_provider_test.exe.${{ matrix.build_type }}.results.xml
 
+    - name: Setup tmate session
+      uses: mxschmitt/action-tmate@v3
+      timeout-minutes: 60
+
     - name: Upload build artifacts
       if: success() || failure()
       uses: actions/upload-artifact@v7
@@ -408,6 +412,10 @@ jobs:
         ls -lR "$GITHUB_WORKSPACE"
         echo "TRTEP_LIBRARY_PATH=$GITHUB_WORKSPACE/orttrtep/lib/libORTTensorRTEp.so" >> $GITHUB_ENV
 
+    - name: Setup msys2
+      uses: msys2/setup-msys2@v2
+      id: setup-msys2
+
     - name: Run tests
       env:
         ORT_UNIT_TEST_MAIN_DYNAMIC_PLUGIN_EP_CONFIG_JSON: |
@@ -426,3 +434,6 @@ jobs:
       if: ${{ failure() }}
       uses: mxschmitt/action-tmate@v3
       timeout-minutes: 60
+      with:
+        sudo: false
+        msys2-location: ${{ steps.setup-msys2.outputs.msys2-location }}

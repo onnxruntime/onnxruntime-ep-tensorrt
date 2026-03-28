@@ -155,7 +155,7 @@ jobs:
       fail-fast: false
       matrix:
         build_type: [Debug] # , RelWithDebInfo
-        cuda_version: ['12.9'] #, '13.0']
+        cuda_version: ['13.0'] # , '12.9'
         trt_version: ['10.14.1.48']
 
     runs-on: [
@@ -197,6 +197,7 @@ jobs:
         Get-ChildItem -Path "${{ runner.temp }}"
         Get-ChildItem -Path "${{ runner.temp }}\TensorRT-${{ matrix.trt_version }}.Windows.win10.cuda-${{ matrix.cuda_version }}" -Recurse
         Add-Content -Path $env:GITHUB_PATH -Value "${{ runner.temp }}\TensorRT-${{ matrix.trt_version }}.Windows.win10.cuda-${{ matrix.cuda_version }}\bin"
+        Add-Content -Path $env:GITHUB_PATH -Value "${{ runner.temp }}\TensorRT-${{ matrix.trt_version }}.Windows.win10.cuda-${{ matrix.cuda_version }}\lib"
 
     - name: Download TRT Ep
       uses: actions/download-artifact@v7
@@ -244,11 +245,11 @@ jobs:
           }
       run: |
         call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
-        dumpbin.exe /dependents ${{ env.TRTEP_LIBRARY_PATH }}
-        dumpbin.exe /dependents ${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe
+        where ctest
+
         WinDepends.exe ${{ env.TRTEP_LIBRARY_PATH }} -o ORTTensorRTEp.json
         WinDepends.exe ${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe -o onnxruntime_provider_test.json
-        ${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe
+        ctest --build-config ${{ matrix.build_type }} --verbose ${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe
 
     - name: Upload build artifacts
       if: success() || failure()
@@ -362,7 +363,7 @@ jobs:
       fail-fast: false
       matrix:
         build_type: [Debug] # , RelWithDebInfo
-        cuda_version: ['12.9'] #, '13.0']
+        cuda_version: ['13.0'] #, '12.9'
         trt_version: ['10.14.1.48']
 
     runs-on: [
@@ -372,7 +373,8 @@ jobs:
     ]
     name: Linux Run Tests CUDA${{ matrix.cuda_version }} ${{ matrix.build_type }}
 
-    container: 'ghcr.io/onnxruntime/onnxruntime-ep-tensorrt/ubuntu_2404_cuda12.9_trt10.14.1.48:sha256-463d90a20a513420863d8ba847891eaa5b23eb544dff9863667a503eee6ad850'
+    # container: 'ghcr.io/onnxruntime/onnxruntime-ep-tensorrt/ubuntu_2404_cuda12.9_trt10.14.1.48:sha256-463d90a20a513420863d8ba847891eaa5b23eb544dff9863667a503eee6ad850'
+    container: 'ghcr.io/onnxruntime/onnxruntime-ep-tensorrt/ubuntu_2404_cuda13.0_trt10.14.1.48:sha256-89dd6a87dc78bad59738659ca17a5d35c5413869fa27467601f54c99a565fc5f'
     environment: Linux_x64
     env:
       ALLOW_RELEASED_ONNX_OPSET_ONLY: '0'

@@ -248,10 +248,16 @@ jobs:
         dumpbin.exe /dependents ${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe
         WinDepends.exe ${{ env.TRTEP_LIBRARY_PATH }} -o ORTTensorRTEp.json
         WinDepends.exe ${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe -o onnxruntime_provider_test.json
-        type ORTTensorRTEp.json
-        type onnxruntime_provider_test.json
         ${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe
 
+    - name: Upload build artifacts
+      if: success() || failure()
+      uses: actions/upload-artifact@v7
+      with:
+        name: depends
+        path: |
+          ORTTensorRTEp.json
+          onnxruntime_provider_test.json
 
   linux-build-ort:
     if: false
@@ -396,7 +402,7 @@ jobs:
       run: |
         env
         ls -lR "$GITHUB_WORKSPACE"
-        echo "TRTEP_LIBRARY_PATH='$GITHUB_WORKSPACE/orttrtep/lib/libORTTensorRTEp.so'" >> $GITHUB_ENV
+        echo "TRTEP_LIBRARY_PATH=$GITHUB_WORKSPACE/orttrtep/lib/libORTTensorRTEp.so" >> $GITHUB_ENV
 
     - name: Run tests
       env:

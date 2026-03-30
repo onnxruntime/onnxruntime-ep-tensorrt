@@ -277,7 +277,6 @@ jobs:
     # WinDepends.exe ${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe -o onnxruntime_provider_test.json
 
     - name: Run tests
-      shell: pwsh
       env:
         ORT_UNIT_TEST_MAIN_LOG_LEVEL: 0
         ORT_UNIT_TEST_MAIN_DYNAMIC_PLUGIN_EP_CONFIG_JSON: |

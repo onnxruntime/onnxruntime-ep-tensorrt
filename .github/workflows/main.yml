@@ -183,6 +183,7 @@ jobs:
     #     dotnet-version: '10.x'
 
     - name: Install WinDbg
+      if: false
       shell: pwsh
       run: |
         $OutDir = "."
@@ -217,6 +218,7 @@ jobs:
         # & $OutDir\windbg\DbgX.Shell.exe
 
     - name: Setup msys2
+      if: false
       uses: msys2/setup-msys2@v2
       id: setup-msys2
 
@@ -226,6 +228,7 @@ jobs:
         azcopy.exe cp --recursive "https://lotusscus.blob.core.windows.net/models/cuda_sdk/v${{ matrix.cuda_version }}" ${{ runner.temp }}
         Get-ChildItem -Path "${{ runner.temp }}"
         Get-ChildItem -Path "${{ runner.temp }}\v${{ matrix.cuda_version }}" -Recurse
+        Add-Content -Path $env:GITHUB_PATH -Value "${{ runner.temp }}\v${{ matrix.cuda_version }}\bin\x64"
         Add-Content -Path $env:GITHUB_PATH -Value "${{ runner.temp }}\v${{ matrix.cuda_version }}\bin"
         Add-Content -Path $env:GITHUB_PATH -Value "${{ runner.temp }}\v${{ matrix.cuda_version }}\extras\CUPTI\lib64"
 
@@ -274,7 +277,7 @@ jobs:
     # WinDepends.exe ${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe -o onnxruntime_provider_test.json
 
     - name: Run tests
-      shell: pwsh
+      shell: cmd
       env:
         ORT_UNIT_TEST_MAIN_LOG_LEVEL: 0
         ORT_UNIT_TEST_MAIN_DYNAMIC_PLUGIN_EP_CONFIG_JSON: |
@@ -285,12 +288,13 @@ jobs:
             "default_ep_options": {}
           }
       run: |
+        set
         ${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe `
           --gtest_output=xml:onnxruntime_provider_test.exe.${{ matrix.build_type }}.results.xml
 
     - name: Setup tmate session
       uses: mxschmitt/action-tmate@v3
-      if: always()
+      if: false
       timeout-minutes: 60
       with:
         sudo: false

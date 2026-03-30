@@ -289,7 +289,7 @@ jobs:
       run: |
         Get-ChildItem Env: | Format-Table -AutoSize
         $env:Path -split ';'
-        ${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe `
+        & ${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe `
           --gtest_output=xml:onnxruntime_provider_test.exe.${{ matrix.build_type }}.results.xml
 
     - name: Setup tmate session

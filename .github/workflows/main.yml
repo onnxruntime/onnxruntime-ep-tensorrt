@@ -183,7 +183,6 @@ jobs:
     #     dotnet-version: '10.x'
 
     - name: Install WinDbg
-      if: false
       shell: pwsh
       run: |
         $OutDir = "."
@@ -216,6 +215,9 @@ jobs:
 
         # Now you can run:
         # & $OutDir\windbg\DbgX.Shell.exe
+
+        & $OutDir\winget\amd64\cdb -iaec "-c \".dump /u /ma ${{ github.workspace }};q\""
+        Set-ItemProperty -Path 'HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AeDebug' -Name 'auto' -Value '1'
 
     - name: Setup msys2
       if: false
@@ -291,6 +293,13 @@ jobs:
         $env:Path -split ';'
         & ${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe `
           --gtest_output=xml:onnxruntime_provider_test.exe.${{ matrix.build_type }}.results.xml
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v7
+      if: always()
+      with:
+        name: dumps
+        path: '*.dump'
 
     - name: Setup tmate session
       uses: mxschmitt/action-tmate@v3

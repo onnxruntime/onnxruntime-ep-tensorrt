@@ -277,7 +277,7 @@ jobs:
     # WinDepends.exe ${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe -o onnxruntime_provider_test.json
 
     - name: Run tests
-      shell: cmd
+      shell: pwsh
       env:
         ORT_UNIT_TEST_MAIN_LOG_LEVEL: 0
         ORT_UNIT_TEST_MAIN_DYNAMIC_PLUGIN_EP_CONFIG_JSON: |
@@ -288,7 +288,8 @@ jobs:
             "default_ep_options": {}
           }
       run: |
-        set
+        Get-ChildItem Env: | Format-Table -AutoSize
+        $env:Path -split ';'
         ${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe `
           --gtest_output=xml:onnxruntime_provider_test.exe.${{ matrix.build_type }}.results.xml
 

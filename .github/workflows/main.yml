@@ -160,7 +160,7 @@ jobs:
 
     runs-on: [
       "self-hosted",
-      "1ES.Pool=onnxruntime-ep-github-Win",
+      "1ES.Pool=onnxruntime-ep-github-Win-GPU-A10",
       "JobId=windows-ort-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
     name: Win Run Tests CUDA${{ matrix.cuda_version }} ${{ matrix.build_type }}

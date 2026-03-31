@@ -220,7 +220,6 @@ jobs:
         Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AeDebug' -Name 'auto' -Value '1'
 
     - name: Setup msys2
-      if: false
       uses: msys2/setup-msys2@v2
       id: setup-msys2
 
@@ -291,20 +290,20 @@ jobs:
       run: |
         Get-ChildItem Env: | Format-Table -AutoSize
         $env:Path -split ';'
-        & $OutDir\windbg\amd64\cdb.exe -o ${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe `
+        & ${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe `
           --gtest_output=xml:onnxruntime_provider_test.exe.${{ matrix.build_type }}.results.xml
 
     - name: Upload build artifacts
       uses: actions/upload-artifact@v7
-      if: always()
+      if: false
       with:
         name: dumps
         path: '*.dump'
 
     - name: Setup tmate session
       uses: mxschmitt/action-tmate@v3
-      if: false
-      timeout-minutes: 60
+      if: always()
+      timeout-minutes: 30
       with:
         sudo: false
         msys2-location: ${{ steps.setup-msys2.outputs.msys2-location }}

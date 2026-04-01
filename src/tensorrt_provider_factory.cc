@@ -87,10 +87,13 @@ OrtStatus* ORT_API_CALL TensorrtExecutionProviderFactory::GetSupportedDevicesImp
   // Create two memory infos per device.
   // The memory info is required to create allocator and gpu data transfer.
   int num_cuda_devices = 0;
-  cudaGetDeviceCount(&num_cuda_devices);
+  cudaError_t cuda_err = cudaGetDeviceCount(&num_cuda_devices);
+  if (cuda_err != cudaSuccess) {
+      return factory->ort_api.CreateStatus(ORT_EP_FAIL, cudaGetErrorString(cuda_err));
+  }
 
   if (num_cuda_devices == 0) {
-    return factory->ort_api.CreateStatus(ORT_FAIL, "No CUDA devices found.");
+    return factory->ort_api.CreateStatus(ORT_EP_FAIL, "No CUDA devices found.");
   }
 
   RETURN_IF_ERROR(factory->CreateMemoryInfoForDevices(num_cuda_devices));

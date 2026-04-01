@@ -89,7 +89,7 @@ jobs:
       shell: pwsh
       run: |
         $buildDir = Join-Path ${{ runner.temp }} "build"
-        echo "OnnxRuntimeBuildDirectory=$buildDir" >> ${{ env:GITHUB_ENV }}
+        echo "OnnxRuntimeBuildDirectory=$buildDir" >> ${env:GITHUB_ENV}
 
     - name: Locate vcvarsall and Setup Env
       uses: ./.github/actions/locate-vcvarsall-and-setup-env
@@ -229,29 +229,29 @@ jobs:
       uses: msys2/setup-msys2@v2
       id: setup-msys2
 
-    - name: Download CUDA SDK v${{ env:CUDA_VERSION }}
+    - name: Download CUDA SDK v${{ matrix.cuda_version }}
       shell: pwsh
       run: |
-        azcopy.exe cp --recursive "https://lotusscus.blob.core.windows.net/models/cuda_sdk/v${{ env:CUDA_VERSION }}" "${{ env:RUNNER_TEMP }}"
-        Get-ChildItem -Path "${{ env:RUNNER_TEMP }}"
-        Get-ChildItem -Path "${{ env:RUNNER_TEMP }}\v${{ env:CUDA_VERSION }}" -Recurse
-        Add-Content -Path ${{ env:GITHUB_PATH }} -Value "${{ env:RUNNER_TEMP }}\v${{ env:CUDA_VERSION }}\bin\x64"
-        Add-Content -Path ${{ env:GITHUB_PATH }} -Value "${{ env:RUNNER_TEMP }}\v${{ env:CUDA_VERSION }}\bin"
-        Add-Content -Path ${{ env:GITHUB_PATH }} -Value "${{ env:RUNNER_TEMP }}\v${{ env:CUDA_VERSION }}\extras\CUPTI\lib64"
+        azcopy.exe cp --recursive "https://lotusscus.blob.core.windows.net/models/cuda_sdk/v${env:CUDA_VERSION}" "${env:RUNNER_TEMP}"
+        Get-ChildItem -Path "${env:RUNNER_TEMP}"
+        Get-ChildItem -Path "${env:RUNNER_TEMP}\v${env:CUDA_VERSION}" -Recurse
+        Add-Content -Path ${env:GITHUB_PATH} -Value "${env:RUNNER_TEMP}\v${env:CUDA_VERSION}\bin\x64"
+        Add-Content -Path ${env:GITHUB_PATH} -Value "${env:RUNNER_TEMP}\v${env:CUDA_VERSION}\bin"
+        Add-Content -Path ${env:GITHUB_PATH} -Value "${env:RUNNER_TEMP}\v${env:CUDA_VERSION}\extras\CUPTI\lib64"
 
-    - name: Download TensorRT-${{ env:TRT_VERSION }}.Windows.win10.cuda-${{ env:CUDA_VERSION }}
+    - name: Download TensorRT-${{ matrix.trt_version }}.Windows.win10.cuda-${{ matrix.cuda_version }}
       shell: pwsh
       run: |
-        azcopy.exe cp --recursive `"https://lotusscus.blob.core.windows.net/models/local/TensorRT-${{ env:TRT_VERSION }}.Windows.win10.cuda-${{ env:CUDA_VERSION }}" "${{ env:RUNNER_TEMP }}"
-        Get-ChildItem -Path "${{ env:RUNNER_TEMP }}"
-        Get-ChildItem -Path "${{ env:RUNNER_TEMP }}\TensorRT-${{ env:TRT_VERSION }}.Windows.win10.cuda-${{ env:CUDA_VERSION }}" -Recurse
-        Add-Content -Path ${{ env:GITHUB_PATH }} -Value "${{ env:RUNNER_TEMP }}\TensorRT-${{ env:TRT_VERSION }}.Windows.win10.cuda-${{ env:CUDA_VERSION }}\bin"
-        Add-Content -Path ${{ env:GITHUB_PATH }} -Value "${{ env:RUNNER_TEMP }}\TensorRT-${{ env:TRT_VERSION }}.Windows.win10.cuda-${{ env:CUDA_VERSION }}\lib"
+        azcopy.exe cp --recursive `"https://lotusscus.blob.core.windows.net/models/local/TensorRT-${env:TRT_VERSION}.Windows.win10.cuda-${env:CUDA_VERSION}" "${env:RUNNER_TEMP}"
+        Get-ChildItem -Path "${env:RUNNER_TEMP}"
+        Get-ChildItem -Path "${env:RUNNER_TEMP}\TensorRT-${env:TRT_VERSION}.Windows.win10.cuda-${env:CUDA_VERSION}" -Recurse
+        Add-Content -Path ${env:GITHUB_PATH} -Value "${env:RUNNER_TEMP}\TensorRT-${env:TRT_VERSION}.Windows.win10.cuda-${env:CUDA_VERSION}\bin"
+        Add-Content -Path ${env:GITHUB_PATH} -Value "${env:RUNNER_TEMP}\TensorRT-${env:TRT_VERSION}.Windows.win10.cuda-${env:CUDA_VERSION}\lib"
 
     - name: Download TRT Ep
       uses: actions/download-artifact@v7
       with:
-        name: Windows_x64_cuda${{ env:CUDA_VERSION }}_trt${{ env:TRT_VERSION }}_${{ env:BUILD_TYPE }}
+        name: Windows_x64_cuda${env:CUDA_VERSION}_trt${env:TRT_VERSION}_${env:BUILD_TYPE}
         run-id: '23867236605'
         github-token: ${{ secrets.GITHUB_TOKEN }}
         path: orttrtep
@@ -259,7 +259,7 @@ jobs:
     - name: Download ORT
       uses: actions/download-artifact@v7
       with:
-        name: 'ort_win-x64_cuda${{ env:CUDA_VERSION }}_${{ env:BUILD_TYPE }}'
+        name: 'ort_win-x64_cuda${env:CUDA_VERSION}_${env:BUILD_TYPE}'
         run-id: '23867236605'
         github-token: ${{ secrets.GITHUB_TOKEN }}
         path: onnxruntime
@@ -296,14 +296,14 @@ jobs:
       run: |
         Get-ChildItem Env: | Format-Table -AutoSize
         $env:Path -split ';'
-        ${{ env:GITHUB_WORKSPACE }}\onnxruntime\onnxruntime_provider_test.exe `
-          --gtest_output=xml:${{ env:ARTIFACT_NAME }}
+        ${env:GITHUB_WORKSPACE}\onnxruntime\onnxruntime_provider_test.exe `
+          --gtest_output=xml:${env:ARTIFACT_NAME}
 
     - name: Upload build artifacts
       uses: actions/upload-artifact@v7
       with:
-        name: ${{ env:ARTIFACT_NAME }}
-        path: ${{ env:ARTIFACT_NAME }}
+        name: ${env:ARTIFACT_NAME}
+        path: ${env:ARTIFACT_NAME}
 
     - name: Setup tmate session
       uses: mxschmitt/action-tmate@v3

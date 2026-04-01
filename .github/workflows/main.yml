@@ -184,6 +184,7 @@ jobs:
 
     - name: Install WinDbg
       shell: pwsh
+      if: false
       run: |
         $OutDir = "."
         $Arch = "x64"
@@ -246,7 +247,7 @@ jobs:
       uses: actions/download-artifact@v7
       with:
         name: Windows_x64_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}
-        run-id: '23678348896'
+        run-id: '23867236605'
         github-token: ${{ secrets.GITHUB_TOKEN }}
         path: orttrtep
 
@@ -254,7 +255,7 @@ jobs:
       uses: actions/download-artifact@v7
       with:
         name: 'ort_win-x64_cuda${{ matrix.cuda_version }}_${{ matrix.build_type }}'
-        run-id: '23678348896'
+        run-id: '23867236605'
         github-token: ${{ secrets.GITHUB_TOKEN }}
         path: onnxruntime
 
@@ -302,7 +303,7 @@ jobs:
 
     - name: Setup tmate session
       uses: mxschmitt/action-tmate@v3
-      if: always()
+      if: false
       timeout-minutes: 60
       with:
         sudo: false

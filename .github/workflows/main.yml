@@ -251,7 +251,7 @@ jobs:
     - name: Download TRT Ep
       uses: actions/download-artifact@v7
       with:
-        name: Windows_x64_cuda${env:CUDA_VERSION}_trt${env:TRT_VERSION}_${env:BUILD_TYPE}
+        name: Windows_x64_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}
         run-id: '23867236605'
         github-token: ${{ secrets.GITHUB_TOKEN }}
         path: orttrtep
@@ -259,7 +259,7 @@ jobs:
     - name: Download ORT
       uses: actions/download-artifact@v7
       with:
-        name: 'ort_win-x64_cuda${env:CUDA_VERSION}_${env:BUILD_TYPE}'
+        name: 'ort_win-x64_cuda${{ matrix.cuda_version }}_${{ matrix.build_type }}'
         run-id: '23867236605'
         github-token: ${{ secrets.GITHUB_TOKEN }}
         path: onnxruntime
@@ -302,8 +302,8 @@ jobs:
     - name: Upload build artifacts
       uses: actions/upload-artifact@v7
       with:
-        name: ${env:ARTIFACT_NAME}
-        path: ${env:ARTIFACT_NAME}
+        name: ${{ env.ARTIFACT_NAME }}
+        path: ${{ env.ARTIFACT_NAME }}
 
     - name: Setup tmate session
       uses: mxschmitt/action-tmate@v3

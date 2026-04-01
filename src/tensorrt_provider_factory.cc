@@ -88,15 +88,22 @@ OrtStatus* ORT_API_CALL TensorrtExecutionProviderFactory::GetSupportedDevicesImp
   // The memory info is required to create allocator and gpu data transfer.
   int num_cuda_devices = 0;
   cudaGetDeviceCount(&num_cuda_devices);
+
+  if (num_cuda_devices == 0) {
+    return factory->ort_api.CreateStatus(ORT_FAIL, "No CUDA devices found.");
+  }
+
   RETURN_IF_ERROR(factory->CreateMemoryInfoForDevices(num_cuda_devices));
 
   int32_t device_id = 0;
+  constexpr uint32_t kNvidiaVendorId = 0x10DE;
 
   for (size_t i = 0; i < num_devices && num_ep_devices < max_ep_devices; ++i) {
     // C API
     const OrtHardwareDevice& device = *devices[i];
 
-    if (factory->ort_api.HardwareDevice_Type(&device) == OrtHardwareDeviceType::OrtHardwareDeviceType_GPU) {
+    if (factory->ort_api.HardwareDevice_Type(&device) == OrtHardwareDeviceType::OrtHardwareDeviceType_GPU &&
+        factory->ort_api.HardwareDevice_VendorId(&device) == kNvidiaVendorId) {
       // These can be returned as nullptr if you have nothing to add.
       OrtKeyValuePairs* ep_metadata = nullptr;
       OrtKeyValuePairs* ep_options = nullptr;

@@ -22,6 +22,9 @@ env:
 
 
 jobs:
+
+# TRTEp Build #########################################################################################################
+
   trtep-build:
     strategy:
       fail-fast: false
@@ -109,6 +112,7 @@ jobs:
         name: ${{ env.ARTIFACT_NAME }}
         path: out/${{ env.ARTIFACT_NAME }}
 
+# ORT Build ###########################################################################################################
 
   ort-build:
     strategy:
@@ -237,9 +241,9 @@ jobs:
         name: ${{ env.ARTIFACT_NAME }}
         path: ${{ runner.temp }}\build\${{ matrix.build_type }}
 
+# Run Tests ###########################################################################################################
 
   run-tests:
-    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -249,7 +253,7 @@ jobs:
 
     runs-on: [
       "self-hosted",
-      "1ES.Pool=onnxruntime-ep-github-Win",
+      "1ES.Pool=onnxruntime-ep-github-Win-GPU-A10",
       "JobId=trtep-win-x64-test-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
     name: Test TRTEp Win-x64 CUDA${{ matrix.cuda_version }} TRT${{ matrix.trt_version }} ${{ matrix.build_type }}
@@ -261,7 +265,8 @@ jobs:
       AZCOPY_AUTO_LOGIN_TYPE: ${{ vars.AZCOPY_AUTO_LOGIN_TYPE }}
       AZCOPY_MSI_CLIENT_ID: ${{ vars.AZCOPY_MSI_CLIENT_ID }}
       ONNXRUNTIME_TEST_GPU_DEVICE_ID: '0'
-      TRTEP_LIBRARY_PATH: '${{ github.workspace }}\bin\ORTTensorRTEp.dll'
+      TRTEP_LIBRARY_PATH: '${{ github.workspace }}\orttrtep\bin\ORTTensorRTEp.dll'
+      ARTIFACT_NAME: onnxruntime_provider_test.exe.${{ matrix.build_type }}.results.xml
 
     steps:
     - name: Download CUDA SDK v${{ matrix.cuda_version }}
@@ -294,6 +299,7 @@ jobs:
     - name: Run tests
       shell: pwsh
       env:
+        ORT_UNIT_TEST_MAIN_LOG_LEVEL: 0
         ORT_UNIT_TEST_MAIN_DYNAMIC_PLUGIN_EP_CONFIG_JSON: |
           {
             "ep_library_registration_name": "NvTensorRtRtx",
@@ -301,4 +307,12 @@ jobs:
             "selected_ep_name": "NvTensorRtRtx",
             "default_ep_options": {}
           }
-      run: ${{ github.workspace }}\${{ matrix.build_type }}\onnxruntime_provider_test.exe
+      run: |
+        ${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe `
+          --gtest_output=xml:${{ env:ARTIFACT_NAME }}
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ env:ARTIFACT_NAME }}
+        path: ${{ env:ARTIFACT_NAME }}

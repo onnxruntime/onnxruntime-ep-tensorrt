@@ -296,8 +296,8 @@ jobs:
       run: |
         Get-ChildItem Env: | Format-Table -AutoSize
         $env:Path -split ';'
-        ${env:GITHUB_WORKSPACE}\onnxruntime\onnxruntime_provider_test.exe `
-          --gtest_output=xml:${env:ARTIFACT_NAME}
+        "${env:GITHUB_WORKSPACE}\onnxruntime\onnxruntime_provider_test.exe" `
+          --gtest_output=xml:"${env:ARTIFACT_NAME}"
 
     - name: Upload build artifacts
       uses: actions/upload-artifact@v7

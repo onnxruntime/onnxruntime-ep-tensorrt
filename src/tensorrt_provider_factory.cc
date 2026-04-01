@@ -55,7 +55,7 @@ OrtStatus* TensorrtExecutionProviderFactory::CreateMemoryInfoForDevices(int num_
   for (int device_id = 0; device_id < num_devices; ++device_id) {
     OrtMemoryInfo* mem_info = nullptr;
     RETURN_IF_ERROR(ort_api.CreateMemoryInfo_V2("Cuda", OrtMemoryInfoDeviceType_GPU,
-                                                /*vendor OrtDevice::VendorIds::NVIDIA*/ 0x10DE,
+                                                /* vendor_id */ kNvidiaVendorId,
                                                 /* device_id */ device_id, OrtDeviceMemoryType_DEFAULT,
                                                 /*alignment*/ 0, OrtAllocatorType::OrtDeviceAllocator, &mem_info));
 
@@ -64,7 +64,7 @@ OrtStatus* TensorrtExecutionProviderFactory::CreateMemoryInfoForDevices(int num_
     // HOST_ACCESSIBLE memory should use the non-CPU device type
     mem_info = nullptr;
     RETURN_IF_ERROR(ort_api.CreateMemoryInfo_V2("CudaPinned", OrtMemoryInfoDeviceType_GPU,
-                                                /*vendor OrtDevice::VendorIds::NVIDIA*/ 0x10DE,
+                                                /* vendor_id */ kNvidiaVendorId,
                                                 /* device_id */ device_id, OrtDeviceMemoryType_HOST_ACCESSIBLE,
                                                 /*alignment*/ 0, OrtAllocatorType::OrtDeviceAllocator, &mem_info));
 
@@ -99,7 +99,6 @@ OrtStatus* ORT_API_CALL TensorrtExecutionProviderFactory::GetSupportedDevicesImp
   RETURN_IF_ERROR(factory->CreateMemoryInfoForDevices(num_cuda_devices));
 
   int32_t device_id = 0;
-  constexpr uint32_t kNvidiaVendorId = 0x10DE;
 
   for (size_t i = 0; i < num_devices && num_ep_devices < max_ep_devices; ++i) {
     // C API
@@ -129,6 +128,9 @@ OrtStatus* ORT_API_CALL TensorrtExecutionProviderFactory::GetSupportedDevicesImp
       if (status != nullptr) {
         return status;
       }
+
+      RETURN_IF_NOT(device_id < num_cuda_devices,
+                    "The device_id for supported device exceeds the number of CUDA devices.");
 
       const OrtMemoryInfo* cuda_gpu_mem_info = factory->cuda_gpu_memory_infos[device_id].get();
       const OrtMemoryInfo* cuda_pinned_mem_info = factory->cuda_pinned_memory_infos[device_id].get();

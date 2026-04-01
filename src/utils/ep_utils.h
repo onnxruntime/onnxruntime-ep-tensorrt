@@ -23,6 +23,8 @@ struct ApiPtrs {
 
 namespace trt_ep {
 
+constexpr uint32_t kNvidiaVendorId = 0x10DE;
+
 #define ENFORCE(condition, ...)                          \
   do {                                                   \
     if (!(condition)) {                                  \

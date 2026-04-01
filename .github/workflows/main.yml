@@ -242,7 +242,7 @@ jobs:
     - name: Download TensorRT-${{ matrix.trt_version }}.Windows.win10.cuda-${{ matrix.cuda_version }}
       shell: pwsh
       run: |
-        azcopy.exe cp --recursive `"https://lotusscus.blob.core.windows.net/models/local/TensorRT-${env:TRT_VERSION}.Windows.win10.cuda-${env:CUDA_VERSION}" "${env:RUNNER_TEMP}"
+        azcopy.exe cp --recursive "https://lotusscus.blob.core.windows.net/models/local/TensorRT-${env:TRT_VERSION}.Windows.win10.cuda-${env:CUDA_VERSION}" "${env:RUNNER_TEMP}"
         Get-ChildItem -Path "${env:RUNNER_TEMP}"
         Get-ChildItem -Path "${env:RUNNER_TEMP}\TensorRT-${env:TRT_VERSION}.Windows.win10.cuda-${env:CUDA_VERSION}" -Recurse
         Add-Content -Path ${env:GITHUB_PATH} -Value "${env:RUNNER_TEMP}\TensorRT-${env:TRT_VERSION}.Windows.win10.cuda-${env:CUDA_VERSION}\bin"

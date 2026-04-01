@@ -216,7 +216,7 @@ jobs:
         # Now you can run:
         # & $OutDir\windbg\DbgX.Shell.exe
 
-        & $OutDir\windbg\amd64\cdb.exe -iaec "-c `".dump /u /ma ${{ github.workspace }};q`""
+        & $OutDir\windbg\amd64\cdb.exe -iaec "-c `".dump /u /ma ${{ github.workspace }}\;q`""
         Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AeDebug' -Name 'auto' -Value '1'
 
     - name: Setup msys2

@@ -225,6 +225,7 @@ jobs:
       id: load_test_configuration
       run: |
         import json
+        import os
         from pathlib import Path
 
         with open(os.environ['GITHUB_OUTPUT'], 'a') as fh:

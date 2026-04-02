@@ -114,7 +114,7 @@ OrtStatus* ORT_API_CALL TensorrtExecutionProviderFactory::GetSupportedDevicesImp
     const uint32_t cuda_device_id =
         static_cast<uint32_t>(factory->ort_api.HardwareDevice_DeviceId(&device));
 
-	// Create and cache the OrtMemoryInfo for this device if we haven't already, 
+    // Create and cache the OrtMemoryInfo for this device if we haven't already,
     // so they can be used for allocator and data transfer creation.
     RETURN_IF_ERROR(factory->EnsureMemoryInfoForDevice(cuda_device_id));
 
@@ -314,11 +314,15 @@ EXPORT_SYMBOL OrtStatus* CreateEpFactories(const char* registration_name, const 
   int num_cuda_devices = 0;
   const cudaError_t cuda_err = cudaGetDeviceCount(&num_cuda_devices);
   if (cuda_err != cudaSuccess) {
-      return ort_api->CreateStatus(ORT_EP_FAIL, cudaGetErrorString(cuda_err));
+    return ort_api->CreateStatus(ORT_EP_FAIL, cudaGetErrorString(cuda_err));
   }
 
   if (num_cuda_devices == 0) {
-      return ort_api->CreateStatus(ORT_EP_FAIL, "No CUDA devices found on the system.");
+    Ort::ThrowOnError(ort_api->Logger_LogMessage(default_logger,
+                      OrtLoggingLevel::ORT_LOGGING_LEVEL_WARNING,
+                      "No CUDA devices found on the system."
+                      "TensorRT execution provider will still be created but will not be able to run any models.",
+                      ORT_FILE, __LINE__, __FUNCTION__));
   }
 
   // Manual init for the C++ API

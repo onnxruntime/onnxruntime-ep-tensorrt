@@ -235,7 +235,7 @@ jobs:
         from pathlib import Path
 
         with open(os.environ['GITHUB_OUTPUT'], 'a') as fh:
-          print({"config": json.load(Path("./.github/data/test_configuration.json").open())}, file=fh)
+          print(f'config={json.dumps(json.load(Path("./.github/data/test_configuration.json").open()))}', file=fh)
 
     - name: Run tests
       shell: pwsh

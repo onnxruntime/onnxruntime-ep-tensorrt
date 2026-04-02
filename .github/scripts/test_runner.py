@@ -119,4 +119,4 @@ args = [
 ]
 
 print(args)
-subprocess.check_output(*args, stderr=subprocess.STDOUT, shell=False)
+subprocess.check_output(args, stderr=subprocess.STDOUT, shell=False)

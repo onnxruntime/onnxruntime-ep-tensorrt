@@ -179,6 +179,12 @@ jobs:
       TRT_VERSION: ${{ matrix.trt_version }}
 
     steps:
+    - name: Checkout Code
+      uses: actions/checkout@v6
+      with:
+        sparse-checkout: .github
+        sparse-checkout-cone-mode: false
+
     - name: Download CUDA SDK v${{ matrix.cuda_version }}
       shell: pwsh
       run: |
@@ -213,12 +219,6 @@ jobs:
         run-id: '23867236605'
         github-token: ${{ secrets.GITHUB_TOKEN }}
         path: onnxruntime
-
-    - name: Checkout Code
-      uses: actions/checkout@v6
-      with:
-        sparse-checkout: .github
-        sparse-checkout-cone-mode: false
 
     - name: Setup python
       uses: actions/setup-python@v6

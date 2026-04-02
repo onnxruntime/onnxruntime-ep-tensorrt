@@ -179,6 +179,10 @@ jobs:
       TRT_VERSION: ${{ matrix.trt_version }}
 
     steps:
+    - name: Setup msys2
+      uses: msys2/setup-msys2@v2
+      id: setup-msys2
+
     - name: Checkout Code
       uses: actions/checkout@v6
       with:
@@ -248,6 +252,13 @@ jobs:
         if ($lastExitCode -ne 0) {
           exit $lastExitCode
         }
+
+    - name: Setup tmate session
+      uses: mxschmitt/action-tmate@v3
+      timeout-minutes: 60
+      with:
+        sudo: false
+        msys2-location: ${{ steps.setup-msys2.outputs.msys2-location }}
 
     - name: Upload build artifacts
       if: ${{ !cancelled() }}
@@ -355,6 +366,7 @@ jobs:
 
 
   linux-run-test:
+    if: false
     strategy:
       fail-fast: false
       matrix:

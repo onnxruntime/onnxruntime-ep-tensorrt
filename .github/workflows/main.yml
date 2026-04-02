@@ -228,6 +228,7 @@ jobs:
 
     - name: Load test configuration
       shell: python
+      if: false
       id: load_test_configuration
       run: |
         import json
@@ -239,15 +240,19 @@ jobs:
 
     - name: Run tests
       shell: pwsh
-      # env:
-      #   ORT_UNIT_TEST_MAIN_LOG_LEVEL: 0
-      #   ORT_UNIT_TEST_MAIN_DYNAMIC_PLUGIN_EP_CONFIG_JSON: ${{ fromJson(steps.load_test_configuration.outputs.config) }}
+      env:
+        ORT_UNIT_TEST_MAIN_LOG_LEVEL: 0
+        ORT_UNIT_TEST_MAIN_DYNAMIC_PLUGIN_EP_CONFIG_JSON: |
+          {
+            "ep_library_registration_name": "NvTensorRtRtx",
+            "ep_library_path": ${{ toJson(env.TRTEP_LIBRARY_PATH) }},
+            "selected_ep_name": "NvTensorRtRtx",
+            "default_ep_options": {}
+          }
       run: |
-        echo "${{ steps.load_test_configuration.outputs.config }}"
-        echo "ORT_UNIT_TEST_MAIN_LOG_LEVEL=0" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        echo "ORT_UNIT_TEST_MAIN_DYNAMIC_PLUGIN_EP_CONFIG_JSON='${{ steps.load_test_configuration.outputs.config }}'" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-        & ${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe --gtest_output=xml:${{ env.ARTIFACT_NAME }}
+        python ${{ github.workspace }}\.github\scripts\test_runner.py `
+          ${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe `
+          ${{ env.ARTIFACT_NAME }}
 
     - name: Upload build artifacts
       if: ${{ !cancelled() }}

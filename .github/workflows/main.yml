@@ -226,24 +226,6 @@ jobs:
         python-version: '3.x'
         architecture: x64
 
-    - name: Load test configuration
-      shell: python
-      if: false
-      id: load_test_configuration
-      run: |
-        import json
-        import os
-        from pathlib import Path
-
-        with open(os.environ['GITHUB_OUTPUT'], 'a') as fh:
-          print(f'config={json.dumps(json.load(Path("./.github/data/test_configuration.json").open()))}', file=fh)
-
-    - name: List workspace files
-      run: |
-        Get-ChildItem -Path "${{ github.workspace }}"
-        Get-ChildItem -Path "${{ github.workspace }}/onnxruntime" -Recurse
-        Get-ChildItem -Path "${{ github.workspace }}/orttrtep" -Recurse
-
     - name: Run tests
       shell: pwsh
       env:
@@ -256,6 +238,10 @@ jobs:
             "default_ep_options": {}
           }
       run: |
+        Get-ChildItem -Path "${{ github.workspace }}"
+        Get-ChildItem -Path "${{ github.workspace }}/onnxruntime" -Recurse
+        Get-ChildItem -Path "${{ github.workspace }}/orttrtep" -Recurse
+
         python ${{ github.workspace }}\.github\scripts\test_runner.py `
           "${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe" `
           "${{ env.ARTIFACT_NAME }}"
@@ -366,12 +352,11 @@ jobs:
 
 
   linux-run-test:
-    if: false
     strategy:
       fail-fast: false
       matrix:
         build_type: [Debug] # , RelWithDebInfo
-        cuda_version: ['13.0'] #, '12.9'
+        cuda_version: ['12.9'] #, '13.0'
         trt_version: ['10.14.1.48']
 
     runs-on: [
@@ -381,8 +366,8 @@ jobs:
     ]
     name: Linux Run Tests CUDA${{ matrix.cuda_version }} ${{ matrix.build_type }}
 
-    # container: 'ghcr.io/onnxruntime/onnxruntime-ep-tensorrt/ubuntu_2404_cuda12.9_trt10.14.1.48:sha256-463d90a20a513420863d8ba847891eaa5b23eb544dff9863667a503eee6ad850'
-    container: 'ghcr.io/onnxruntime/onnxruntime-ep-tensorrt/ubuntu_2404_cuda13.0_trt10.14.1.48:sha256-89dd6a87dc78bad59738659ca17a5d35c5413869fa27467601f54c99a565fc5f'
+    container: 'ghcr.io/onnxruntime/onnxruntime-ep-tensorrt/ubuntu_2404_cuda12.9_trt10.14.1.48:sha256-463d90a20a513420863d8ba847891eaa5b23eb544dff9863667a503eee6ad850'
+    # container: 'ghcr.io/onnxruntime/onnxruntime-ep-tensorrt/ubuntu_2404_cuda13.0_trt10.14.1.48:sha256-89dd6a87dc78bad59738659ca17a5d35c5413869fa27467601f54c99a565fc5f'
     environment: Linux_x64
     env:
       ALLOW_RELEASED_ONNX_OPSET_ONLY: '0'
@@ -390,13 +375,21 @@ jobs:
       AZCOPY_MSI_CLIENT_ID: ${{ vars.AZCOPY_MSI_CLIENT_ID }}
       CMAKE_CUDA_ARCHITECTURES: 86
       ONNXRUNTIME_TEST_GPU_DEVICE_ID: '0'
+      TRTEP_LIBRARY_PATH_1: $GITHUB_WORKSPACE/orttrtep/lib/libORTTensorRTEp.so
+      ARTIFACT_NAME: onnxruntime_provider_test.exe.${{ matrix.build_type }}.results.xml
 
     steps:
+    - name: Checkout Code
+      uses: actions/checkout@v6
+      with:
+        sparse-checkout: .github
+        sparse-checkout-cone-mode: false
+
     - name: Download TRT Ep
       uses: actions/download-artifact@v7
       with:
         name: Linux_x64_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}
-        run-id: '23628836210'
+        run-id: '23915118854'
         github-token: ${{ secrets.GITHUB_TOKEN }}
         path: orttrtep
 
@@ -404,19 +397,19 @@ jobs:
       uses: actions/download-artifact@v7
       with:
         name: 'ort_linux_x64_cuda${{ matrix.cuda_version }}_${{ matrix.build_type }}'
-        run-id: '23628836210'
+        run-id: '23915118854'
         github-token: ${{ secrets.GITHUB_TOKEN }}
         path: onnxruntime
 
     - name: List workspace files
       run: |
-        env
-        ls -lR "$GITHUB_WORKSPACE"
         echo "TRTEP_LIBRARY_PATH=$GITHUB_WORKSPACE/orttrtep/lib/libORTTensorRTEp.so" >> $GITHUB_ENV
 
-    - name: Setup msys2
-      uses: msys2/setup-msys2@v2
-      id: setup-msys2
+    - name: Setup python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.x'
+        architecture: x64
 
     - name: Run tests
       env:
@@ -429,13 +422,16 @@ jobs:
           }
       run: |
         env
+        ls -lR "$GITHUB_WORKSPACE"
         chmod +x $GITHUB_WORKSPACE/onnxruntime/onnxruntime_provider_test
-        $GITHUB_WORKSPACE/onnxruntime/onnxruntime_provider_test
 
-    - name: Setup tmate session
-      if: ${{ failure() }}
-      uses: mxschmitt/action-tmate@v3
-      timeout-minutes: 60
+        python $GITHUB_WORKSPACE\.github\scripts\test_runner.py `
+          $GITHUB_WORKSPACE\onnxruntime\onnxruntime_provider_test.exe" `
+          "${{ env.ARTIFACT_NAME }}"
+
+    - name: Upload build artifacts
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@v7
       with:
-        sudo: false
-        msys2-location: ${{ steps.setup-msys2.outputs.msys2-location }}
+        name: ${{ env.ARTIFACT_NAME }}
+        path: ${{ env.ARTIFACT_NAME }}

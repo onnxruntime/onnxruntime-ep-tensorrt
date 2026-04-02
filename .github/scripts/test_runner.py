@@ -5,9 +5,6 @@ import sys
 print(f"cwd: {os.getcwd()}")
 print(f"exe: {sys.argv[1]}")
 
-if not os.path.exists(sys.argv[1]):
-  raise "Input executable can't be found"
-
 args = [
   sys.argv[1],
   "--gtest_output=xml:" + sys.argv[2],
@@ -120,4 +117,17 @@ args = [
 ]
 
 print("args: ", args)
-subprocess.check_output(args, text=True, stderr=subprocess.STDOUT, shell=False)
+
+p = subprocess.Popen(
+  args,
+  text=True,
+  universal_newlines=True,
+  stdout=subprocess.PIPE,
+  stderr=subprocess.STDOUT,
+  shell=False
+)
+
+for line in p.stdout:
+  print(line)
+
+sys.exit(p.returncode)

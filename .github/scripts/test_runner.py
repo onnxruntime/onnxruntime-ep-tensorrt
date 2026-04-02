@@ -2,6 +2,11 @@ import os
 import subprocess
 import sys
 
+print(f"cwd: {os.getcwd()}")
+
+if os.path.exists(sys.argv[1]):
+  raise "Input executable can't be found"
+
 args = [
   sys.argv[1],
   "--gtest_output=xml:" + sys.argv[2],
@@ -114,4 +119,4 @@ args = [
 ]
 
 print(args)
-subprocess.check_call(args, shell=False)
+subprocess.check_output(*args, stderr=subprocess.STDOUT, shell=False)

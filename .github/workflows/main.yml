@@ -238,6 +238,12 @@ jobs:
         with open(os.environ['GITHUB_OUTPUT'], 'a') as fh:
           print(f'config={json.dumps(json.load(Path("./.github/data/test_configuration.json").open()))}', file=fh)
 
+    - name: List workspace files
+      run: |
+        Get-ChildItem -Path "${{ github.workspace }}"
+        Get-ChildItem -Path "${{ github.workspace }}/onnxruntime" -Recurse
+        Get-ChildItem -Path "${{ github.workspace }}/orttrtep" -Recurse
+
     - name: Run tests
       shell: pwsh
       env:

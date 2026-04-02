@@ -3,8 +3,9 @@ import subprocess
 import sys
 
 print(f"cwd: {os.getcwd()}")
+print(f"exe: {sys.argv[1]}")
 
-if os.path.exists(sys.argv[1]):
+if not os.path.exists(sys.argv[1]):
   raise "Input executable can't be found"
 
 args = [
@@ -118,5 +119,5 @@ args = [
   ]) + '"'
 ]
 
-print(args)
-subprocess.check_output(args, stderr=subprocess.STDOUT, shell=False)
+print("args: ", args)
+subprocess.check_output(args, text=True, stderr=subprocess.STDOUT, shell=False)

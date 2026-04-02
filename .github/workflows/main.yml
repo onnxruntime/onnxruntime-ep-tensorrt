@@ -245,6 +245,9 @@ jobs:
         python ${{ github.workspace }}\.github\scripts\test_runner.py `
           "${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe" `
           "${{ env.ARTIFACT_NAME }}"
+        if ($lastExitCode -ne 0) {
+          exit $lastExitCode
+        }
 
     - name: Upload build artifacts
       if: ${{ !cancelled() }}
@@ -423,10 +426,10 @@ jobs:
       run: |
         env
         ls -lR "$GITHUB_WORKSPACE"
-        chmod +x $GITHUB_WORKSPACE/onnxruntime/onnxruntime_provider_test
+        chmod +x "$GITHUB_WORKSPACE/onnxruntime/onnxruntime_provider_test"
 
-        python $GITHUB_WORKSPACE\.github\scripts\test_runner.py `
-          $GITHUB_WORKSPACE\onnxruntime\onnxruntime_provider_test.exe" `
+        python "$GITHUB_WORKSPACE/.github/scripts/test_runner.py"   \
+          "$GITHUB_WORKSPACE/onnxruntime/onnxruntime_provider_test" \
           "${{ env.ARTIFACT_NAME }}"
 
     - name: Upload build artifacts

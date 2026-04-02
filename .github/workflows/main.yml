@@ -214,6 +214,12 @@ jobs:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         path: onnxruntime
 
+    - name: Checkout Code
+      uses: actions/checkout@v6
+      with:
+        sparse-checkout: .github
+        sparse-checkout-cone-mode: false
+
     - name: Setup python
       uses: actions/setup-python@v6
       with:

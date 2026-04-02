@@ -305,6 +305,9 @@ jobs:
               "MathOpTest.Add_Broadcast_MultidirectionalAB",
               "MathOpTest.Add_Broadcast_MultidirectionalBA",
               "MathOpTest.Add_Broadcast_MultidirectionalBA",
+              "MathOpTest.Max_6",
+              "MathOpTest.Mean_6",
+              "MathOpTest.Min_6",
               "MathOpTest.Sum_6",
               "MathOpTest.Sum_6_double",
               "MathOpTest.Sum_8_Test1",
@@ -316,7 +319,7 @@ jobs:
       run: |
         Get-ChildItem Env: | Format-Table -AutoSize
         $env:Path -split ';'
-        "${env:GITHUB_WORKSPACE}\onnxruntime\onnxruntime_provider_test.exe" --gtest_output=xml`:"${env:ARTIFACT_NAME}"
+        & ${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe --gtest_output=xml:${{ env.ARTIFACT_NAME }}
 
     - name: Upload build artifacts
       uses: actions/upload-artifact@v7

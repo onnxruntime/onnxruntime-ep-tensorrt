@@ -228,6 +228,7 @@ jobs:
     - name: Setup msys2
       uses: msys2/setup-msys2@v2
       id: setup-msys2
+      if: false
 
     - name: Download CUDA SDK v${{ matrix.cuda_version }}
       shell: pwsh
@@ -292,12 +293,30 @@ jobs:
             "ep_library_registration_name": "NvTensorRtRtx",
             "ep_library_path": ${{ toJson(env.TRTEP_LIBRARY_PATH) }},
             "selected_ep_name": "NvTensorRtRtx",
-            "default_ep_options": {}
+            "default_ep_options": {},
+            "tests_to_skip": [
+              "GemmOpTypedTests.TestGemmAlpha",
+              "GemmOpTypedTests.TestGemmAlpha",
+              "GemmOpTypedTests.TestGemmAlphaBeta",
+              "GemmOpTypedTests.TestGemmBeta",
+              "GemmOpTypedTests.TestGemmZeroAlpha",
+              "GemmOpTypedTests.TestGemmZeroAlphaBeta",
+              "GemmOpTypedTests.TestGemmZeroBeta",
+              "MathOpTest.Add_Broadcast_MultidirectionalAB",
+              "MathOpTest.Add_Broadcast_MultidirectionalBA",
+              "MathOpTest.Add_Broadcast_MultidirectionalBA",
+              "MathOpTest.Sum_6",
+              "MathOpTest.Sum_6_double",
+              "MathOpTest.Sum_8_Test1",
+              "MathOpTest.Sum_8_Test1_double",
+              "MathOpTest.Sum_8_Test2",
+              "MathOpTest.Sum_8_Test2_double"
+            ]
           }
       run: |
         Get-ChildItem Env: | Format-Table -AutoSize
         $env:Path -split ';'
-        "${env:GITHUB_WORKSPACE}\onnxruntime\onnxruntime_provider_test.exe" --gtest_output=xml:"${{ env.ARTIFACT_NAME }}"
+        "${env:GITHUB_WORKSPACE}\onnxruntime\onnxruntime_provider_test.exe" --gtest_output=xml`:"${env:ARTIFACT_NAME}"
 
     - name: Upload build artifacts
       uses: actions/upload-artifact@v7

@@ -48,27 +48,29 @@ const char* ORT_API_CALL TensorrtExecutionProviderFactory::GetVersionImpl(const 
   return factory->ep_version_.c_str();
 }
 
-OrtStatus* TensorrtExecutionProviderFactory::CreateMemoryInfoForDevices(int num_devices) {
-  cuda_gpu_memory_infos.reserve(num_devices);
-  cuda_pinned_memory_infos.reserve(num_devices);
-
-  for (int device_id = 0; device_id < num_devices; ++device_id) {
+OrtStatus* TensorrtExecutionProviderFactory::EnsureMemoryInfoForDevice(uint32_t device_id) {
+  if (cuda_gpu_memory_infos.find(device_id) == cuda_gpu_memory_infos.end()) {
     OrtMemoryInfo* mem_info = nullptr;
     RETURN_IF_ERROR(ort_api.CreateMemoryInfo_V2("Cuda", OrtMemoryInfoDeviceType_GPU,
                                                 /* vendor_id */ kNvidiaVendorId,
-                                                /* device_id */ device_id, OrtDeviceMemoryType_DEFAULT,
-                                                /*alignment*/ 0, OrtAllocatorType::OrtDeviceAllocator, &mem_info));
+                                                /* device_id */ static_cast<int>(device_id),
+                                                OrtDeviceMemoryType_DEFAULT,
+                                                /* alignment */ 0,
+                                                OrtAllocatorType::OrtDeviceAllocator,
+                                                &mem_info));
+    cuda_gpu_memory_infos.emplace(device_id, MemoryInfoUniquePtr(mem_info, ort_api.ReleaseMemoryInfo));
+  }
 
-    cuda_gpu_memory_infos[device_id] = MemoryInfoUniquePtr(mem_info, ort_api.ReleaseMemoryInfo);
-
-    // HOST_ACCESSIBLE memory should use the non-CPU device type
-    mem_info = nullptr;
+  if (cuda_pinned_memory_infos.find(device_id) == cuda_pinned_memory_infos.end()) {
+    OrtMemoryInfo* mem_info = nullptr;
     RETURN_IF_ERROR(ort_api.CreateMemoryInfo_V2("CudaPinned", OrtMemoryInfoDeviceType_GPU,
                                                 /* vendor_id */ kNvidiaVendorId,
-                                                /* device_id */ device_id, OrtDeviceMemoryType_HOST_ACCESSIBLE,
-                                                /*alignment*/ 0, OrtAllocatorType::OrtDeviceAllocator, &mem_info));
-
-    cuda_pinned_memory_infos[device_id] = MemoryInfoUniquePtr(mem_info, ort_api.ReleaseMemoryInfo);
+                                                /* device_id */ static_cast<int>(device_id),
+                                                OrtDeviceMemoryType_HOST_ACCESSIBLE,
+                                                /* alignment */ 0,
+                                                OrtAllocatorType::OrtDeviceAllocator,
+                                                &mem_info));
+    cuda_pinned_memory_infos.emplace(device_id, MemoryInfoUniquePtr(mem_info, ort_api.ReleaseMemoryInfo));
   }
 
   return nullptr;
@@ -84,89 +86,75 @@ OrtStatus* ORT_API_CALL TensorrtExecutionProviderFactory::GetSupportedDevicesImp
   size_t& num_ep_devices = *p_num_ep_devices;
   auto* factory = static_cast<TensorrtExecutionProviderFactory*>(this_ptr);
 
-  // Create two memory infos per device.
-  // The memory info is required to create allocator and gpu data transfer.
+  // Prevent unbounded growth if ORT calls this function multiple times.
+  factory->cuda_gpu_mem_devices.clear();
+  factory->cuda_pinned_mem_devices.clear();
+  factory->cuda_gpu_mem_devices.reserve(num_devices);
+  factory->cuda_pinned_mem_devices.reserve(num_devices);
+
   int num_cuda_devices = 0;
   cudaError_t cuda_err = cudaGetDeviceCount(&num_cuda_devices);
+
+  if (cuda_err == cudaErrorNoDevice || num_cuda_devices == 0) {
+    return nullptr;
+  }
+
   if (cuda_err != cudaSuccess) {
-      return factory->ort_api.CreateStatus(ORT_EP_FAIL, cudaGetErrorString(cuda_err));
+    return factory->ort_api.CreateStatus(ORT_EP_FAIL, cudaGetErrorString(cuda_err));
   }
-
-  if (num_cuda_devices == 0) {
-    return factory->ort_api.CreateStatus(ORT_EP_FAIL, "No CUDA devices found.");
-  }
-
-  RETURN_IF_ERROR(factory->CreateMemoryInfoForDevices(num_cuda_devices));
-
-  int32_t device_id = 0;
 
   for (size_t i = 0; i < num_devices && num_ep_devices < max_ep_devices; ++i) {
-    // C API
     const OrtHardwareDevice& device = *devices[i];
 
-    if (factory->ort_api.HardwareDevice_Type(&device) == OrtHardwareDeviceType::OrtHardwareDeviceType_GPU &&
-        factory->ort_api.HardwareDevice_VendorId(&device) == kNvidiaVendorId) {
-      // These can be returned as nullptr if you have nothing to add.
-      OrtKeyValuePairs* ep_metadata = nullptr;
-      OrtKeyValuePairs* ep_options = nullptr;
-      factory->ort_api.CreateKeyValuePairs(&ep_metadata);
-      factory->ort_api.CreateKeyValuePairs(&ep_options);
-
-      // The ep options can be provided here as default values.
-      // Users can also call SessionOptionsAppendExecutionProvider_V2 C API with provided ep options to override.
-      factory->ort_api.AddKeyValuePair(ep_metadata, "gpu_type", "data center");  // random example using made up values
-      factory->ort_api.AddKeyValuePair(ep_options, "trt_builder_optimization_level", "3");
-
-      // OrtEpDevice copies ep_metadata and ep_options.
-      OrtEpDevice* ep_device = nullptr;
-      auto* status = factory->ort_api.GetEpApi()->CreateEpDevice(factory, &device, ep_metadata, ep_options,
-                                                                 &ep_device);
-
-      factory->ort_api.ReleaseKeyValuePairs(ep_metadata);
-      factory->ort_api.ReleaseKeyValuePairs(ep_options);
-
-      if (status != nullptr) {
-        return status;
-      }
-
-      RETURN_IF_NOT(device_id < num_cuda_devices,
-                    "The device_id for supported device exceeds the number of CUDA devices.");
-
-      const OrtMemoryInfo* cuda_gpu_mem_info = factory->cuda_gpu_memory_infos[device_id].get();
-      const OrtMemoryInfo* cuda_pinned_mem_info = factory->cuda_pinned_memory_infos[device_id].get();
-
-      // Register the allocator info required by TRT EP.
-      RETURN_IF_ERROR(factory->ep_api.EpDevice_AddAllocatorInfo(ep_device, cuda_gpu_mem_info));
-      RETURN_IF_ERROR(factory->ep_api.EpDevice_AddAllocatorInfo(ep_device, cuda_pinned_mem_info));
-
-      // Get memory device from memory info for gpu data transfer
-      factory->cuda_gpu_mem_devices.push_back(factory->ep_api.MemoryInfo_GetMemoryDevice(cuda_gpu_mem_info));
-      factory->cuda_pinned_mem_devices.push_back(factory->ep_api.MemoryInfo_GetMemoryDevice(cuda_pinned_mem_info));
-
-      ep_devices[num_ep_devices++] = ep_device;
-      ++device_id;
+    if (factory->ort_api.HardwareDevice_Type(&device) != OrtHardwareDeviceType::OrtHardwareDeviceType_GPU ||
+        factory->ort_api.HardwareDevice_VendorId(&device) != kNvidiaVendorId) {
+      continue;
     }
 
-    // C++ API equivalent. Throws on error.
-    //{
-    //  Ort::ConstHardwareDevice device(devices[i]);
-    //  if (device.Type() == OrtHardwareDeviceType::OrtHardwareDeviceType_GPU) {
-    //    Ort::KeyValuePairs ep_metadata;
-    //    Ort::KeyValuePairs ep_options;
-    //    ep_metadata.Add("version", "0.1");
-    //    ep_options.Add("trt_builder_optimization_level", "3");
-    //    Ort::EpDevice ep_device{*this_ptr, device, ep_metadata.GetConst(), ep_options.GetConst()};
-    //    ep_devices[num_ep_devices++] = ep_device.release();
-    //  }
-    //}
+    const uint32_t cuda_device_id =
+        static_cast<uint32_t>(factory->ort_api.HardwareDevice_DeviceId(&device));
+
+	// Create and cache the OrtMemoryInfo for this device if we haven't already, 
+    // so they can be used for allocator and data transfer creation.
+    RETURN_IF_ERROR(factory->EnsureMemoryInfoForDevice(cuda_device_id));
+
+    const OrtMemoryInfo* cuda_gpu_mem_info = factory->cuda_gpu_memory_infos.at(cuda_device_id).get();
+    const OrtMemoryInfo* cuda_pinned_mem_info = factory->cuda_pinned_memory_infos.at(cuda_device_id).get();
+
+    // These can be returned as nullptr if EP has nothing to add.
+    OrtKeyValuePairs* ep_metadata = nullptr;
+    OrtKeyValuePairs* ep_options = nullptr;
+    factory->ort_api.CreateKeyValuePairs(&ep_metadata);
+    factory->ort_api.CreateKeyValuePairs(&ep_options);
+
+    // The ep options can be provided here as default values.
+    // Users can also call SessionOptionsAppendExecutionProvider_V2 C API with provided ep options to override.
+    factory->ort_api.AddKeyValuePair(ep_metadata, "gpu_type", "data center");
+    factory->ort_api.AddKeyValuePair(ep_options, "trt_builder_optimization_level", "3");
+
+    // OrtEpDevice copies ep_metadata and ep_options.
+    OrtEpDevice* ep_device = nullptr;
+    auto* status = factory->ort_api.GetEpApi()->CreateEpDevice(factory, &device, ep_metadata, ep_options, &ep_device);
+
+    factory->ort_api.ReleaseKeyValuePairs(ep_metadata);
+    factory->ort_api.ReleaseKeyValuePairs(ep_options);
+
+    if (status != nullptr) {
+      return status;
+    }
+
+    RETURN_IF_ERROR(factory->ep_api.EpDevice_AddAllocatorInfo(ep_device, cuda_gpu_mem_info));
+    RETURN_IF_ERROR(factory->ep_api.EpDevice_AddAllocatorInfo(ep_device, cuda_pinned_mem_info));
+
+    factory->cuda_gpu_mem_devices.push_back(factory->ep_api.MemoryInfo_GetMemoryDevice(cuda_gpu_mem_info));
+    factory->cuda_pinned_mem_devices.push_back(factory->ep_api.MemoryInfo_GetMemoryDevice(cuda_pinned_mem_info));
+
+    ep_devices[num_ep_devices++] = ep_device;
   }
 
-  // Create gpu data transfer
   auto data_transfer_impl = std::make_unique<TRTEpDataTransfer>(static_cast<const ApiPtrs&>(*factory),
-                                                                factory->cuda_gpu_mem_devices,    // device memory
-                                                                factory->cuda_pinned_mem_devices  // shared memory
-  );
-
+                                                                factory->cuda_gpu_mem_devices,
+                                                                factory->cuda_pinned_mem_devices);
   factory->data_transfer_impl = std::move(data_transfer_impl);
 
   return nullptr;
@@ -321,6 +309,17 @@ EXPORT_SYMBOL OrtStatus* CreateEpFactories(const char* registration_name, const 
   const OrtApi* ort_api = ort_api_base->GetApi(ORT_API_VERSION);
   const OrtEpApi* ort_ep_api = ort_api->GetEpApi();
   const OrtModelEditorApi* model_editor_api = ort_api->GetModelEditorApi();
+
+  // Fail fast if CUDA device is not available.
+  int num_cuda_devices = 0;
+  const cudaError_t cuda_err = cudaGetDeviceCount(&num_cuda_devices);
+  if (cuda_err != cudaSuccess) {
+      return ort_api->CreateStatus(ORT_EP_FAIL, cudaGetErrorString(cuda_err));
+  }
+
+  if (num_cuda_devices == 0) {
+      return ort_api->CreateStatus(ORT_EP_FAIL, "No CUDA devices found on the system.");
+  }
 
   // Manual init for the C++ API
   Ort::InitApi(ort_api);

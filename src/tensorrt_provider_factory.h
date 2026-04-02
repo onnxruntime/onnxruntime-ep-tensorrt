@@ -17,7 +17,7 @@ struct TensorrtExecutionProviderFactory : public OrtEpFactory, public ApiPtrs {
  public:
   TensorrtExecutionProviderFactory(const char* ep_name, const OrtLogger& default_logger, ApiPtrs apis);
 
-  OrtStatus* CreateMemoryInfoForDevices(int num_devices);
+  OrtStatus* EnsureMemoryInfoForDevice(uint32_t device_id);
 
   // Called by child OrtEp instances to retrieve the cached kernel registry for that EP.
   OrtStatus* GetKernelRegistryForEp(TensorrtExecutionProvider& ep, /*out*/ const OrtKernelRegistry** kernel_registry);

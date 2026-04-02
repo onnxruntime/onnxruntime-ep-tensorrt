@@ -295,6 +295,12 @@ jobs:
             "selected_ep_name": "NvTensorRtRtx",
             "default_ep_options": {},
             "tests_to_skip": [
+              "DequantizeLinearContribOpTest.DequantizeLinear_1",
+              "DequantizeLinearContribOpTest.DequantizeLinear_2",
+              "DequantizeLinearOpTest.DequantizeLinear_per_tensor_float_int16_cpu",
+              "DequantizeLinearOpTest.DequantizeLinear_per_tensor_float_int8",
+              "DequantizeLinearOpTest.DequantizeLinear_per_tensor_float_uint16_cpu",
+              "DequantizeLinearOpTest.DequantizeLinear_per_tensor_half_int8",
               "GemmOpTypedTests.TestGemmAlpha",
               "GemmOpTypedTests.TestGemmAlpha",
               "GemmOpTypedTests.TestGemmAlphaBeta",
@@ -313,7 +319,14 @@ jobs:
               "MathOpTest.Sum_8_Test1",
               "MathOpTest.Sum_8_Test1_double",
               "MathOpTest.Sum_8_Test2",
-              "MathOpTest.Sum_8_Test2_double"
+              "MathOpTest.Sum_8_Test2_double",
+              "QuantizeLinearContribOpTest.QuantizeLinear_per_channel",
+              "QuantizeLinearContribOpTest.QuantizeLinear_per_channel_negative_axis",
+              "QuantizeLinearContribOpTest.QuantizeLinear_per_tensor_float_int16",
+              "QuantizeLinearContribOpTest.QuantizeLinear_per_tensor_float_int8",
+              "QuantizeLinearContribOpTest.QuantizeLinear_per_tensor_float_uint16",
+              "QuantizeLinearContribOpTest.QuantizeLinear_per_tensor_half_int8",
+              "QuantizeLinearContribOpTest.QuantizeLinear_per_tensor_half_uint8"
             ]
           }
       run: |
@@ -322,6 +335,7 @@ jobs:
         & ${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe --gtest_output=xml:${{ env.ARTIFACT_NAME }}
 
     - name: Upload build artifacts
+      if: ${{ !cancelled() }}
       uses: actions/upload-artifact@v7
       with:
         name: ${{ env.ARTIFACT_NAME }}

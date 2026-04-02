@@ -342,6 +342,7 @@ jobs:
         & ${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe --gtest_output=xml:${{ env.ARTIFACT_NAME }}
 
     - name: Upload build artifacts
+      if: ${{ !cancelled() }}
       uses: actions/upload-artifact@v7
       with:
         name: ${{ env.ARTIFACT_NAME }}

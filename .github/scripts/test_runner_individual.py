@@ -4429,8 +4429,10 @@ test_names = [
   "WriteScores.single_score_transform_none_add_second_class",
 ]
 
+Path('logs').mkdir(parents=True, exist_ok=True)
+
 for name in test_names[:10]:
-  clean_name = name.replace('/', '_')
+  clean_name = name.replace('/', '_').replace('.', '_')
   args = [
     sys.argv[1],
     "--gtest_output=xml:" + clean_name + ".xml\"",
@@ -4447,7 +4449,7 @@ for name in test_names[:10]:
     shell=False,
   )
 
-  with Path(clean_name + '.log').open('w') as strm:
+  with (Path('logs') / f"{clean_name}.log").open('w') as strm:
     for line in p.stdout:
       strm.write(line)
     strm.flush()

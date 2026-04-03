@@ -1,9 +1,9 @@
 name: "Build ORT"
 
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+# concurrency:
+#   group: ${{ github.workflow }}-${{ github.ref }}
+#   cancel-in-progress: true
 
 
 on:
@@ -243,11 +243,7 @@ jobs:
             "default_ep_options": {}
           }
       run: |
-        Get-ChildItem -Path "${{ github.workspace }}"
-        Get-ChildItem -Path "${{ github.workspace }}/onnxruntime" -Recurse
-        Get-ChildItem -Path "${{ github.workspace }}/orttrtep" -Recurse
-
-        python ${{ github.workspace }}\.github\scripts\test_runner_grouped.py `
+        & python ${{ github.workspace }}\.github\scripts\test_runner_individual.py `
           "${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe" `
           "${{ env.ARTIFACT_NAME }}"
         if ($lastExitCode -ne 0) {

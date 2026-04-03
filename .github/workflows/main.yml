@@ -151,7 +151,6 @@ jobs:
 
 
   win-run-test:
-    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -442,6 +441,8 @@ jobs:
         python "$GITHUB_WORKSPACE/.github/scripts/test_runner.py"   \
           "$GITHUB_WORKSPACE/onnxruntime/onnxruntime_provider_test" \
           "${{ env.ARTIFACT_NAME }}"
+
+        ls -lR "$GITHUB_WORKSPACE/logs"
 
     - name: Upload build artifacts
       if: ${{ !cancelled() }}

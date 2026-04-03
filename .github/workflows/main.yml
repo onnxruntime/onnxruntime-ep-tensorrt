@@ -154,7 +154,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        build_type: [Debug] # , RelWithDebInfo
+        build_type: [RelWithDebInfo] # , Debug
         cuda_version: ['12.9'] # '13.0'
         trt_version: ['10.14.1.48']
 

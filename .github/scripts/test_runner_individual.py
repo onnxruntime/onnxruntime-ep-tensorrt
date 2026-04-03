@@ -4452,9 +4452,9 @@ for name in test_names:
       strm.write(line)
     strm.flush()
 
-  # p.stdout.close()
-  # returncode = p.wait()
+  p.stdout.close()
+  returncode = p.wait()
 
-  print(f"Group {g} exited with code {p.returncode}.", flush=True)
+  print(f"Group {g} exited with code {returncode}.", flush=True)
 
 sys.exit(0)

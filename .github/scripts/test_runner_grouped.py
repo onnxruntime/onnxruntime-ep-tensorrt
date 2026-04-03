@@ -211,7 +211,7 @@ for g in groups:
     universal_newlines=True,
     stdout=subprocess.PIPE,
     stderr=subprocess.STDOUT,
-    shell=False
+    shell=False,
   )
 
   with Path(g.replace('/', '_') + '.log').open('w') as strm:
@@ -219,9 +219,9 @@ for g in groups:
       strm.write(line)
     strm.flush()
 
-  p.stdout.close()
-  returncode = p.wait()
+  # p.stdout.close()
+  # returncode = p.wait()
 
-  print(f"Group {g} exited with exit code {returncode}.")
+  print(f"Group {g} exited with code {p.returncode}.")
 
 sys.exit(0)

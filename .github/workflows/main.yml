@@ -180,6 +180,7 @@ jobs:
 
     steps:
     - name: Setup msys2
+      if: false
       uses: msys2/setup-msys2@v2
       id: setup-msys2
 
@@ -246,7 +247,7 @@ jobs:
         Get-ChildItem -Path "${{ github.workspace }}/onnxruntime" -Recurse
         Get-ChildItem -Path "${{ github.workspace }}/orttrtep" -Recurse
 
-        python ${{ github.workspace }}\.github\scripts\test_runner.py `
+        python ${{ github.workspace }}\.github\scripts\test_runner_grouped.py `
           "${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe" `
           "${{ env.ARTIFACT_NAME }}"
         if ($lastExitCode -ne 0) {
@@ -254,6 +255,7 @@ jobs:
         }
 
     - name: Setup tmate session
+      if: false
       uses: mxschmitt/action-tmate@v3
       timeout-minutes: 60
       with:
@@ -265,7 +267,9 @@ jobs:
       uses: actions/upload-artifact@v7
       with:
         name: ${{ env.ARTIFACT_NAME }}
-        path: ${{ env.ARTIFACT_NAME }}
+        path: |
+          '*.xml'
+          '*.log'
 
   linux-build-ort:
     if: false

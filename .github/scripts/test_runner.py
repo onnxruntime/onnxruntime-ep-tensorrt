@@ -98,6 +98,7 @@ args = [
     "RNNTest.RNN_*",
     "RoundTest.*",
     "Scan8.OuterScopeAccess_NoShapeInMainGraph_TypeAndShapeInSubgraph",
+    "Scan8.OuterScopeAccess_NoShapeInMainGraph_NoTypeAndShapeInSubgraph",
     "Scatter.IndicesUpdatesDontMatch",
     "Scatter.MLFloat16",
     "ScatterElements.*",
@@ -131,5 +132,8 @@ p = subprocess.Popen(
 for line in p.stdout:
   print(line, end='')
 
-print(f"Process exited with exit code {p.returncode}.")
-sys.exit(p.returncode)
+p.stdout.close()
+returncode = p.wait()
+
+print(f"Process exited with exit code {returncode}.")
+sys.exit(returncode)

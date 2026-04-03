@@ -53,7 +53,7 @@ jobs:
       with:
         dockerfile: ${{ github.workspace }}/.github/docker/Dockerfile.ubuntu_2404_cuda
         image-name: ghcr.io/onnxruntime/onnxruntime-ep-tensorrt/ubuntu_2404_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version}}
-        build-args: 'BASE_IMAGE=nvidia/cuda:${{ matrix.cuda_version }}.1-cudnn-devel-ubuntu24.04 TRT_VERSION=${{ matrix.trt_version}}-1+cuda${{ matrix.cuda_version }} CMAKE_CUDA_ARCHITECTURES=${{ env.CMAKE_CUDA_ARCHITECTURES }} --network=host'
+        build-args: 'BASE_IMAGE=nvidia/cuda:${{ matrix.cuda_version }}.1-cudnn-devel-ubuntu24.04 TRT_VERSION=${{ matrix.trt_version}}-1+cuda12.9 CMAKE_CUDA_ARCHITECTURES=${{ env.CMAKE_CUDA_ARCHITECTURES }} --network=host'
         pull: false
         push: true
         azure-container-registry-name: onnxruntimebuildcache

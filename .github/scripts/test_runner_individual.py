@@ -4455,6 +4455,6 @@ for name in test_names:
   p.stdout.close()
   returncode = p.wait()
 
-  print(f"Group {g} exited with code {returncode}.", flush=True)
+  print(f"Group {name} exited with code {returncode}.", flush=True)
 
 sys.exit(0)

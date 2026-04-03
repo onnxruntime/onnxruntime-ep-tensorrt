@@ -249,7 +249,7 @@ jobs:
         if ($lastExitCode -ne 0) {
           exit $lastExitCode
         }
-        Get-ChildItem -Path "${{ github.workspace }}"
+        Get-ChildItem -Path "${{ github.workspace }}/logs"
 
     - name: Setup tmate session
       if: false
@@ -263,10 +263,8 @@ jobs:
       if: ${{ !cancelled() }}
       uses: actions/upload-artifact@v7
       with:
-        name: ${{ env.ARTIFACT_NAME }}
-        path: |
-          '${{ github.workspace }}/*.log'
-          '${{ github.workspace }}/*.xml'
+        name: logs
+        path: logs
 
   linux-build-ort:
     if: false

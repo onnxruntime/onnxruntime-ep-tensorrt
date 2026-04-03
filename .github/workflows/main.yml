@@ -180,6 +180,7 @@ jobs:
 
     steps:
     - name: Setup msys2
+      if: false
       uses: msys2/setup-msys2@v2
       id: setup-msys2
 
@@ -248,8 +249,10 @@ jobs:
         if ($lastExitCode -ne 0) {
           exit $lastExitCode
         }
+        Get-ChildItem -Path "${{ github.workspace }}"
 
     - name: Setup tmate session
+      if: false
       uses: mxschmitt/action-tmate@v3
       timeout-minutes: 60
       with:

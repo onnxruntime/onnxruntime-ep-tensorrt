@@ -180,7 +180,6 @@ jobs:
 
     steps:
     - name: Setup msys2
-      if: false
       uses: msys2/setup-msys2@v2
       id: setup-msys2
 
@@ -251,7 +250,6 @@ jobs:
         }
 
     - name: Setup tmate session
-      if: false
       uses: mxschmitt/action-tmate@v3
       timeout-minutes: 60
       with:
@@ -264,8 +262,8 @@ jobs:
       with:
         name: ${{ env.ARTIFACT_NAME }}
         path: |
-          '*.xml'
-          '*.log'
+          '${{ github.workspace }}/*.xml'
+          '${{ github.workspace }}/*.log'
 
   linux-build-ort:
     if: false

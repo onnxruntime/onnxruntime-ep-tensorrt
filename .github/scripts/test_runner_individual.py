@@ -4431,7 +4431,7 @@ test_names = [
 
 Path('logs').mkdir(parents=True, exist_ok=True)
 
-for name in test_names[:10]:
+for name in test_names:
   clean_name = name.replace('/', '_')
   args = [
     sys.argv[1],
@@ -4457,6 +4457,6 @@ for name in test_names[:10]:
   p.stdout.close()
   returncode = p.wait()
 
-  print(f"Group {name} exited with code {returncode}.", flush=True)
+  print(f"Test {name} exited with code {returncode}.", flush=True)
 
 sys.exit(0)

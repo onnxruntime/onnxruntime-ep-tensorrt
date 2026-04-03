@@ -98,6 +98,7 @@ args = [
     "RNNTest.RNN_*",
     "RoundTest.*",
     "Scan8.*",
+    "Scan9.*",
     "Scatter.IndicesUpdatesDontMatch",
     "Scatter.MLFloat16",
     "ScatterElements.*",

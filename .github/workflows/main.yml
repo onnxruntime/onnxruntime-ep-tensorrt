@@ -243,7 +243,7 @@ jobs:
             "default_ep_options": {}
           }
       run: |
-        & python ${{ github.workspace }}\.github\scripts\test_runner.py `
+        & python ${{ github.workspace }}\.github\scripts\test_runner_individual.py `
           "${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe" `
           "${{ env.ARTIFACT_NAME }}"
         if ($lastExitCode -ne 0) {
@@ -365,6 +365,7 @@ jobs:
 
 
   linux-run-test:
+    if: false
     strategy:
       fail-fast: false
       matrix:

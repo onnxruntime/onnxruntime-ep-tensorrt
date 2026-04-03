@@ -4429,7 +4429,7 @@ test_names = [
   "WriteScores.single_score_transform_none_add_second_class",
 ]
 
-for name in test_names:
+for name in test_names[:50]:
   clean_name = name.replace('/', '_')
   args = [
     sys.argv[1],

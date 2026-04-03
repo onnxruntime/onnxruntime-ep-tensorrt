@@ -250,7 +250,6 @@ jobs:
           exit $lastExitCode
         }
         Get-ChildItem -Path "${{ github.workspace }}"
-        Get-ChildItem -Path "${{ github.workspace }}/logs"
 
     - name: Setup tmate session
       if: false
@@ -266,7 +265,7 @@ jobs:
       with:
         name: ${{ env.ARTIFACT_NAME }}
         path: |
-          logs
+          '${{ github.workspace }}/*.log'
           '${{ github.workspace }}/*.xml'
 
   linux-build-ort:

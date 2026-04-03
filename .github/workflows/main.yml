@@ -151,6 +151,7 @@ jobs:
 
 
   win-run-test:
+    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -365,7 +366,6 @@ jobs:
 
 
   linux-run-test:
-    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -375,7 +375,7 @@ jobs:
 
     runs-on: [
       "self-hosted",
-      "1ES.Pool=onnxruntime-ep-Ubuntu2404-AMD-CPU",
+      "1ES.Pool=onnxruntime-ep-github-linux-a10",
       "JobId=linux-ort-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
     name: Linux Run Tests CUDA${{ matrix.cuda_version }} ${{ matrix.build_type }}
@@ -447,5 +447,5 @@ jobs:
       if: ${{ !cancelled() }}
       uses: actions/upload-artifact@v7
       with:
-        name: ${{ env.ARTIFACT_NAME }}
-        path: ${{ env.ARTIFACT_NAME }}
+        name: logs
+        path: logs

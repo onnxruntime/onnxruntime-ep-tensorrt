@@ -7,7 +7,7 @@ print(f"exe: {sys.argv[1]}")
 
 args = [
   sys.argv[1],
-  "--gtest_output=xml:" + sys.argv[2],
+  "--gtest_output=xml:logs/" + sys.argv[2],
   '--gtest_filter=-' + ":".join([
     "ActivationOpTest.Relu_fp16",
     "ActivationOpTest.Sigmoid_fp16",

@@ -151,6 +151,7 @@ jobs:
 
 
   win-run-test:
+    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -366,7 +367,6 @@ jobs:
 
 
   linux-run-test:
-    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -402,6 +402,7 @@ jobs:
         architecture: x64
 
     - name: Check cuda compatibility
+      shell: python
       run: |
         import subprocess
         import sys

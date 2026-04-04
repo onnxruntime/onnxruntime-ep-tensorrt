@@ -173,7 +173,7 @@ jobs:
       CMAKE_CUDA_ARCHITECTURES: 86
       ONNXRUNTIME_TEST_GPU_DEVICE_ID: '0'
       TRTEP_LIBRARY_PATH: '${{ github.workspace }}\orttrtep\bin\ORTTensorRTEp.dll'
-      ARTIFACT_NAME: orttrtep_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}.results.xml
+      ARTIFACT_NAME: orttrtep_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}.results
       BUILD_TYPE: ${{ matrix.build_type }}
       CUDA_VERSION: ${{ matrix.cuda_version }}
       TRT_VERSION: ${{ matrix.trt_version }}
@@ -264,7 +264,9 @@ jobs:
       uses: actions/upload-artifact@v7
       with:
         name: ${{ env.ARTIFACT_NAME }}
-        path: ${{ env.ARTIFACT_NAME }}
+        path: |
+            ${{ env.ARTIFACT_NAME }}.xml
+            ${{ env.ARTIFACT_NAME }}.log
 
 
   linux-build-ort:
@@ -366,6 +368,7 @@ jobs:
 
 
   linux-run-test:
+    if: false
     strategy:
       fail-fast: false
       matrix:

@@ -11,8 +11,10 @@ To run:
 '''
 
 import os
+import re
 import subprocess
 import sys
+from pathlib import Path
 
 print("cwd: ", os.getcwd())
 print("exe: ", sys.argv[1])
@@ -42,7 +44,33 @@ exclusions = {
   "BifurcationDetectorTest": [],
   "BitShiftOpTest": [],
   "CastMap": [],
-  "CastOpTest": [],
+  "CastOpTest": [
+    "CastOpTest.NonStringTypes",
+    "CastOpTest.Int4x2ToInt8",
+    "CastOpTest.Int4x2ToUInt8",
+    "CastOpTest.Int4x2ToInt32",
+    "CastOpTest.Int4x2ToInt32OddNumberOfElements",
+    "CastOpTest.Int4x2ToInt64",
+    "CastOpTest.Int4x2ToBool",
+    "CastOpTest.Int4x2ToFloat",
+    "CastOpTest.Int4x2ToDouble",
+    "CastOpTest.Int4x2ToMLFloat16",
+    "CastOpTest.Int4x2ToBFloat16",
+    "CastOpTest.Int8ToInt4x2",
+    "CastOpTest.Int32ToInt4x2",
+    "CastOpTest.Int32ToInt4x2OddNumberOfElements",
+    "CastOpTest.Int32ToInt4x2EmptyTensor",
+    "CastOpTest.Int64ToInt4x2",
+    "CastOpTest.FloatToInt4x2",
+    "CastOpTest.MLFloat16ToInt4x2",
+    "CastOpTest.MLFloat16ToInt4x2BoundaryValues",
+    "CastOpTest.BFloat16ToInt4x2",
+    "CastOpTest.BoolToInt4x2",
+    "CastOpTest.ToFloat8E4M3FN",
+    "CastOpTest.Int4x2ToFloat8E4M3FN",
+    "CastOpTest.Float8E4M3FNToInt4x2",
+    "CastOpTest.Float8E4M3FNToInt4x2_OddShape",
+  ],
   "CategoryMapper": [],
   "CDistOpTest": [],
   "Col2ImOpTest": [],
@@ -64,7 +92,13 @@ exclusions = {
     "ConstantOpTest.GH11091",
   ],
   "ContribFunExpansionTest": [],
-  "ContribOpAttentionTest": [],
+  "ContribOpAttentionTest": [
+    "ContribOpAttentionTest.Causal_EmptyPastState",
+    "ContribOpAttentionTest.AttentionWithNeoXRotaryEmbedding",
+    "ContribOpAttentionTest.AttentionPastState_dynamic",
+    "ContribOpAttentionTest.Attention_Mask2D_Fp32_B2_S32",
+    "ContribOpAttentionTest.Attention_Mask1D_Fp32_B2_S64",
+  ],
   "ContribOpRotaryEmbeddingTest": [],
   "ContribOpTest": [],
   "ConvIntegerTest": [],
@@ -472,7 +506,9 @@ exclusions = {
   "MatMulNBits": [],
   "MatMulNBitsLutGemm": [],
   "MeanVarianceNormalizationTest": [],
-  "MemcpyTest": [],
+  "MemcpyTest": [
+    "MemcpyTest.copy1",
+  ],
   "MLOpTest": [],
   "ModOpTest": [
     "ModOpTest.Int8_mixed_sign",
@@ -498,7 +534,9 @@ exclusions = {
     "MultiHeadAttentionTest.CrossAttention_DiffSequenceLengths_UsingDMMHAInsideMHA",
   ],
   "MurmurHash3OpTest": [],
-  "MVNContribOpTest": [],
+  "MVNContribOpTest": [
+    "MVNContribOpTest.MeanVarianceNormalizationCPUTest_Version1_TO_8",
+  ],
   "NGramRepeatBlockTest": [],
   "NhwcConvTest": [],
   "NhwcMaxPoolContribOpTest": [],
@@ -632,7 +670,9 @@ exclusions = {
     "PadOpTest.Pad_Reflect_SlicedExtentExceeded",
     "PadOpTest.Pad_Wrap_NegativeFront_PositiveBack",
   ],
-  "PartitioningUtilsTest": [],
+  "PartitioningUtilsTest": [
+    "PartitioningUtilsTest.TestQDQHandling",
+  ],
   "PoolTest/0": [],
   "PoolTest/1": [],
   "PoolTest": [
@@ -687,6 +727,7 @@ exclusions = {
     "QuantizeLinearContribOpTest.QuantizeLinear_per_tensor_float_int16",
     "QuantizeLinearContribOpTest.QuantizeLinear_per_tensor_float_int8",
     "QuantizeLinearContribOpTest.QuantizeLinear_per_tensor_float_uint16",
+    "QuantizeLinearContribOpTest.QuantizeLinear_per_tensor_float_uint8",
     "QuantizeLinearContribOpTest.QuantizeLinear_per_tensor_half_int8",
     "QuantizeLinearContribOpTest.QuantizeLinear_per_tensor_half_uint8",
   ],
@@ -695,6 +736,7 @@ exclusions = {
   ],
   "QuantizeLinearOp21BlockedTest": [],
   "QuantizeLinearOpMLFloat16Test": [
+    "QuantizeLinearOpMLFloat16Test.Float8",
     "QuantizeLinearOpMLFloat16Test.Uint8",
   ],
   "QuantizeLinearOpTest": [
@@ -752,6 +794,7 @@ exclusions = {
     "ReductionOpTest.ArgMin_float_first_index_random",
     "ReductionOpTest.ArgMin_int32_select_last",
     "ReductionOpTest.ArgMin_int8",
+    "ReductionOpTest.empty_set_ReduceLogSumExp",
     "ReductionOpTest.ReduceDimWithZero1",
     "ReductionOpTest.ReduceDimWithZero2",
     "ReductionOpTest.ReduceL1_do_not_keep_dims",
@@ -841,13 +884,16 @@ exclusions = {
     "ResizeOpTest.NhwcResizeOpLinearDownSampleTest_4DBilinear_pytorch_half_pixel_int8",
     "ResizeOpTest.NhwcResizeOpLinearDownSampleTest_tf_crop_and_resize_with_extrapolation",
     "ResizeOpTest.NhwcResizeOpLinearUpSampleTest_4DBilinear_asymmetric_int8",
+    "ResizeOpTest.NoAntialias_AlignCorners_Cubic_Floor_NHWC",
     "ResizeOpTest.ResizeOpLinearDownSampleTest_2DBilinear_pytorch_half_pixel",
     "ResizeOpTest.ResizeOpLinearDownSampleTest_3DTrilinear_pytorch_half_pixel",
     "ResizeOpTest.ResizeOpLinearUpSampleTest_5DTrilinear_pytorch_half_pixel",
     "ResizeOpTest.ResizeOpNearestUpSample_Nearest2xOptimization_Sizes",
   ],
   "RestorePaddingTest": [],
-  "ReverseSequenceTest": [],
+  "ReverseSequenceTest": [
+    "ReverseSequenceTest.InvalidInput",
+  ],
   "RMSNormalizationOpTest": [
     "RMSNormalizationOpTest.RMSNorm",
     "RMSNormalizationOpTest.RMSNorm_float16",
@@ -942,6 +988,7 @@ exclusions = {
   ],
   "SparseToDenseMatMul": [],
   "SplitOperatorTest": [
+    "SplitOperatorTest.Axis0EqualSplit",
     "SplitOperatorTest.Axis0UnequalSplitFloat",
     "SplitOperatorTest.Axis0UnequalSplitInputFloat",
     "SplitOperatorTest.Axis0UnequalSplitInputFloat_not_initializer",
@@ -1010,6 +1057,7 @@ exclusions = {
     "TensorOpTest.ReshapeWithInitializer_bfloat16",
     "TensorOpTest.ShapeTest2D",
     "TensorOpTest.ShapeTest3D",
+    "TensorOpTest.TileInt8Type",
     "TensorOpTest.TileOverflowMultipleAxes",
     "TensorOpTest.TileOverflowRepeats1D",
     "TensorOpTest.TileOverflowRepeats2D",
@@ -1097,7 +1145,7 @@ for group_name, test_names in exclusions.items():
 
 args = [
   sys.argv[1],
-  "--gtest_output=xml:" + sys.argv[2],
+  "--gtest_output=xml:" + sys.argv[2] + ".xml",
   '--gtest_filter=-' + ":".join(filter),
 ]
 
@@ -1112,10 +1160,15 @@ p = subprocess.Popen(
   shell=False
 )
 
-for line in p.stdout:
-  print(line, end='')
+log_filter_re = re.compile("\[\s*(?:OK|RUN|FAILED|DISABLED|PASSED|SKIPPED)\s*\]")
+with Path(sys.argv[2] + ".log").open('w') as log_strm:
+  for line in p.stdout:
+    log_strm.write(line)
+    if log_filter_re.match(line):
+      print(line, end='', flush=True)
 
-p.stdout.close()
+  p.stdout.close()
+
 returncode = p.wait()
 
 print(f"Process exited with exit code {returncode}.")

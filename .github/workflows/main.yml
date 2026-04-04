@@ -394,6 +394,48 @@ jobs:
       ARTIFACT_NAME: onnxruntime_provider_test.exe.${{ matrix.build_type }}.results.xml
 
     steps:
+    - name: Setup python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.x'
+        architecture: x64
+
+    - name: Check cuda compatibility
+      run: |
+        import subprocess
+        import sys
+
+        REQUIRED_CUDA_VERSION = "12.9"
+        REQUIRED_MIN_DRIVER_VERSION = 525
+        REQUIRED_MAX_DRIVER_VERSION = 580
+
+        def get_cuda_version():
+            try:
+                output = subprocess.check_output(["nvcc", "--version"]).decode()
+                for line in output.splitlines():
+                    if "release" in line:
+                        return line.split("release")[-1].strip()
+            except subprocess.CalledProcessError:
+                return None
+
+        def get_driver_version():
+            try:
+                output = subprocess.check_output(["nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader"]).decode()
+                return float(output.strip())
+            except subprocess.CalledProcessError:
+                return None
+
+        cuda_version = get_cuda_version()
+        driver_version = get_driver_version()
+
+        print("cuda_version: ", cuda_version)
+        print("driver_version: ", driver_version)
+
+        if cuda_version == REQUIRED_CUDA_VERSION and (driver_version >= REQUIRED_MIN_DRIVER_VERSION and driver_version < REQUIRED_MAX_DRIVER_VERSION):
+            print("CUDA and NVIDIA driver are compatible.")
+        else:
+            sys.exit(f"Compatibility check failed: CUDA {cuda_version}, Driver {driver_version}")
+
     - name: Checkout Code
       uses: actions/checkout@v6
       with:
@@ -421,16 +463,9 @@ jobs:
         echo "TRTEP_LIBRARY_PATH=$GITHUB_WORKSPACE/orttrtep/lib/libORTTensorRTEp.so" >> $GITHUB_ENV
 
     - name: Setup tmate session
+      if: false
       uses: mxschmitt/action-tmate@v3
       timeout-minutes: 60
-      with:
-        sudo: false
-
-    - name: Setup python
-      uses: actions/setup-python@v6
-      with:
-        python-version: '3.x'
-        architecture: x64
 
     - name: Run tests
       env:
@@ -445,6 +480,8 @@ jobs:
         env
         ls -lR "$GITHUB_WORKSPACE"
         chmod +x "$GITHUB_WORKSPACE/onnxruntime/onnxruntime_provider_test"
+
+        strace -f -e trace=file "$GITHUB_WORKSPACE/onnxruntime/onnxruntime_provider_test"
 
         python "$GITHUB_WORKSPACE/.github/scripts/test_runner.py"   \
           "$GITHUB_WORKSPACE/onnxruntime/onnxruntime_provider_test" \

@@ -154,7 +154,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        build_type: [RelWithDebInfo] # , Debug
+        build_type: [Debug, RelWithDebInfo]
         cuda_version: ['12.9'] # '13.0'
         trt_version: ['10.14.1.48']
 
@@ -213,7 +213,7 @@ jobs:
       uses: actions/download-artifact@v7
       with:
         name: Windows_x64_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}
-        run-id: '23867236605'
+        run-id: '23968962435'
         github-token: ${{ secrets.GITHUB_TOKEN }}
         path: orttrtep
 
@@ -221,7 +221,7 @@ jobs:
       uses: actions/download-artifact@v7
       with:
         name: 'ort_win-x64_cuda${{ matrix.cuda_version }}_${{ matrix.build_type }}'
-        run-id: '23867236605'
+        run-id: '23968962435'
         github-token: ${{ secrets.GITHUB_TOKEN }}
         path: onnxruntime
 
@@ -243,13 +243,13 @@ jobs:
             "default_ep_options": {}
           }
       run: |
-        & python ${{ github.workspace }}\.github\scripts\test_runner_individual.py `
+        & python ${{ github.workspace }}\.github\scripts\test_runner.py `
           "${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe" `
           "${{ env.ARTIFACT_NAME }}"
         if ($lastExitCode -ne 0) {
           exit $lastExitCode
         }
-        Get-ChildItem -Path "${{ github.workspace }}/logs"
+        Get-ChildItem -Path "${{ github.workspace }}"
 
     - name: Setup tmate session
       if: false
@@ -263,8 +263,8 @@ jobs:
       if: always()
       uses: actions/upload-artifact@v7
       with:
-        name: logs
-        path: logs
+        name: ${{ env.ARTIFACT_NAME }}
+        path: ${{ env.ARTIFACT_NAME }}
 
   linux-build-ort:
     if: false

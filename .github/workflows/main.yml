@@ -151,12 +151,11 @@ jobs:
 
 
   win-run-test:
-    if: false
     strategy:
       fail-fast: false
       matrix:
         build_type: [Debug, RelWithDebInfo]
-        cuda_version: ['12.9', '13.0']
+        cuda_version: ['12.9'] # , '13.0']
         trt_version: ['10.14.1.48']
 
     runs-on: [
@@ -174,7 +173,7 @@ jobs:
       CMAKE_CUDA_ARCHITECTURES: 86
       ONNXRUNTIME_TEST_GPU_DEVICE_ID: '0'
       TRTEP_LIBRARY_PATH: '${{ github.workspace }}\orttrtep\bin\ORTTensorRTEp.dll'
-      ARTIFACT_NAME: onnxruntime_provider_test.exe.cuda${{ matrix.cuda_version }}.trt${{ matrix.trt_version }}.${{ matrix.build_type }}.results.xml
+      ARTIFACT_NAME: orttrtep_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}.results.xml
       BUILD_TYPE: ${{ matrix.build_type }}
       CUDA_VERSION: ${{ matrix.cuda_version }}
       TRT_VERSION: ${{ matrix.trt_version }}
@@ -392,9 +391,17 @@ jobs:
       CMAKE_CUDA_ARCHITECTURES: 86
       ONNXRUNTIME_TEST_GPU_DEVICE_ID: '0'
       TRTEP_LIBRARY_PATH_1: $GITHUB_WORKSPACE/orttrtep/lib/libORTTensorRTEp.so
-      ARTIFACT_NAME: onnxruntime_provider_test.exe.${{ matrix.build_type }}.results.xml
+      ARTIFACT_NAME: orttrtep_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}.results.xml
 
     steps:
+    - name: Show environment
+      run: |
+        env
+        which nvidia-smi
+        which nvcc
+        find / -name "nvidia-smi"
+        find / -name "nvcc"
+  
     - name: Setup python
       uses: actions/setup-python@v6
       with:

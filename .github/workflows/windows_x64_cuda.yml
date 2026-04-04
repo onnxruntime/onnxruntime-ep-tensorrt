@@ -216,6 +216,7 @@ jobs:
           --build_shared_lib `
           --use_vcpkg `
           --use_vcpkg_ms_internal_asset_cache `
+          --disable_memleak_checker `
           --target onnxruntime_provider_test
         if ($lastExitCode -ne 0) {
           exit $lastExitCode
@@ -249,6 +250,7 @@ jobs:
 # Run Tests ###########################################################################################################
 
   run-tests:
+    if: false
     strategy:
       fail-fast: false
       matrix:

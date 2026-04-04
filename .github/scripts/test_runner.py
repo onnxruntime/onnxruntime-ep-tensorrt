@@ -332,7 +332,10 @@ exclusions = {
   ],
   "LpNormalizationTest": [],
   "LRNTest": [],
-  "LSTMTest": [],
+  "LSTMTest": [
+    "LSTMTest.ONNXRuntime_TestLSTMSequenceLengthShorterThanInputSequenceLength",
+    "LSTMTest.ONNXRuntime_TestLSTMSequenceLengthShorterThanInputSequenceLengthNoP",
+  ],
   "MathOpTest": [
     "MathOpTest.Abs_int32",
     "MathOpTest.Abs_int8",

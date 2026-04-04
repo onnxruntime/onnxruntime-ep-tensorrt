@@ -151,6 +151,7 @@ jobs:
 
 
   win-run-test:
+    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -365,12 +366,11 @@ jobs:
 
 
   linux-run-test:
-    if: false
     strategy:
       fail-fast: false
       matrix:
         build_type: [Debug] # , RelWithDebInfo
-        cuda_version: ['12.8'] #, '13.0'
+        cuda_version: ['12.9'] #, '13.0'
         trt_version: ['10.14.1.48']
 
     runs-on: [
@@ -380,9 +380,9 @@ jobs:
     ]
     name: Linux Run Tests CUDA${{ matrix.cuda_version }} ${{ matrix.build_type }}
 
-    # container: 'ghcr.io/onnxruntime/onnxruntime-ep-tensorrt/ubuntu_2404_cuda12.9_trt10.14.1.48:sha256-463d90a20a513420863d8ba847891eaa5b23eb544dff9863667a503eee6ad850'
+    container: 'ghcr.io/onnxruntime/onnxruntime-ep-tensorrt/ubuntu_2404_cuda12.9_trt10.14.1.48:sha256-463d90a20a513420863d8ba847891eaa5b23eb544dff9863667a503eee6ad850'
     # container: 'ghcr.io/onnxruntime/onnxruntime-ep-tensorrt/ubuntu_2404_cuda13.0_trt10.14.1.48:sha256-89dd6a87dc78bad59738659ca17a5d35c5413869fa27467601f54c99a565fc5f'
-    container: 'ghcr.io/onnxruntime/onnxruntime-ep-tensorrt/ubuntu_2404_cuda12.8_trt10.14.1.48:sha256-04d5f773a286729256933fe1e70d067a645d5946c41f7bbd177e2008b8435c23'
+    # container: 'ghcr.io/onnxruntime/onnxruntime-ep-tensorrt/ubuntu_2404_cuda12.8_trt10.14.1.48:sha256-04d5f773a286729256933fe1e70d067a645d5946c41f7bbd177e2008b8435c23'
     environment: Linux_x64
     env:
       ALLOW_RELEASED_ONNX_OPSET_ONLY: '0'
@@ -404,7 +404,7 @@ jobs:
       uses: actions/download-artifact@v7
       with:
         name: Linux_x64_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}
-        run-id: '23964618364'
+        run-id: '23915118854'
         github-token: ${{ secrets.GITHUB_TOKEN }}
         path: orttrtep
 
@@ -412,13 +412,19 @@ jobs:
       uses: actions/download-artifact@v7
       with:
         name: 'ort_linux_x64_cuda${{ matrix.cuda_version }}_${{ matrix.build_type }}'
-        run-id: '23964618364'
+        run-id: '23915118854'
         github-token: ${{ secrets.GITHUB_TOKEN }}
         path: onnxruntime
 
     - name: List workspace files
       run: |
         echo "TRTEP_LIBRARY_PATH=$GITHUB_WORKSPACE/orttrtep/lib/libORTTensorRTEp.so" >> $GITHUB_ENV
+
+    - name: Setup tmate session
+      uses: mxschmitt/action-tmate@v3
+      timeout-minutes: 60
+      with:
+        sudo: false
 
     - name: Setup python
       uses: actions/setup-python@v6
@@ -444,11 +450,11 @@ jobs:
           "$GITHUB_WORKSPACE/onnxruntime/onnxruntime_provider_test" \
           "${{ env.ARTIFACT_NAME }}"
 
-        ls -lR "$GITHUB_WORKSPACE/logs"
+        ls -l "$GITHUB_WORKSPACE"
 
     - name: Upload build artifacts
-      if: ${{ !cancelled() }}
+      if: always()
       uses: actions/upload-artifact@v7
       with:
-        name: logs
-        path: logs
+        name: ${{ env.ARTIFACT_NAME }}
+        path: ${{ env.ARTIFACT_NAME }}

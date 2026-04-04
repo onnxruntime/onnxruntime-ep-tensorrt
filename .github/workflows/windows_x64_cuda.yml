@@ -250,7 +250,6 @@ jobs:
 # Run Tests ###########################################################################################################
 
   run-tests:
-    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -332,13 +331,12 @@ jobs:
             "default_ep_options": {}
           }
       run: |
-        Get-ChildItem -Path "${{ github.workspace }}"
-        Get-ChildItem -Path "${{ github.workspace }}/onnxruntime" -Recurse
-        Get-ChildItem -Path "${{ github.workspace }}/orttrtep" -Recurse
-
-        python ${{ github.workspace }}\.github\scripts\test_runner.py `
+        & python ${{ github.workspace }}\.github\scripts\test_runner.py `
           "${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe" `
           "${{ env.ARTIFACT_NAME }}"
+        if ($lastExitCode -ne 0) {
+          exit $lastExitCode
+        }
 
     - name: Upload build artifacts
       if: ${{ !cancelled() }}

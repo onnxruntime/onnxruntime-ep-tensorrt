@@ -1,10 +1,24 @@
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT License.
+
+'''
+Script to run tests using onnxruntime_provider_test.
+Includes a mapping of tests to explicitly exclude.
+
+To run:
+  python test_runner.py <path to onnxruntime_provider_test> <path to gtest results file>
+
+'''
+
 import os
 import subprocess
 import sys
 
-print(f"cwd: {os.getcwd()}")
-print(f"exe: {sys.argv[1]}")
+print("cwd: ", os.getcwd())
+print("exe: ", sys.argv[1])
 
+# Map of test suite name to list of tests to exclude.
+# Use "[*]" as value to exclude the entire test suite.
 exclusions = {
   "ActivationOpNoInfTest": [],
   "ActivationOpTest": [
@@ -1070,6 +1084,7 @@ exclusions = {
   "WriteScores": [],
 }
 
+# Transform the exclusions to a string in gtest_filter's expected format
 filter = []
 for group_name, test_names in exclusions.items():
   if test_names == ["*"]:

@@ -1160,7 +1160,7 @@ p = subprocess.Popen(
   shell=False
 )
 
-log_filter_re = re.compile("\[\s*(?:OK|RUN|FAILED|DISABLED|PASSED|SKIPPED)\s*\]")
+log_filter_re = re.compile(r"\[\s*(?:OK|RUN|FAILED|DISABLED|PASSED|SKIPPED)\s*\]")
 with Path(sys.argv[2] + ".log").open('w') as log_strm:
   for line in p.stdout:
     log_strm.write(line)

@@ -180,7 +180,6 @@ jobs:
 
     steps:
     - name: Setup msys2
-      if: false
       uses: msys2/setup-msys2@v2
       id: setup-msys2
 
@@ -225,6 +224,13 @@ jobs:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         path: onnxruntime
 
+    - name: Setup tmate session
+      uses: mxschmitt/action-tmate@v3
+      timeout-minutes: 60
+      with:
+        sudo: false
+        msys2-location: ${{ steps.setup-msys2.outputs.msys2-location }}
+
     - name: Setup python
       uses: actions/setup-python@v6
       with:
@@ -250,14 +256,6 @@ jobs:
           exit $lastExitCode
         }
         Get-ChildItem -Path "${{ github.workspace }}"
-
-    - name: Setup tmate session
-      if: false
-      uses: mxschmitt/action-tmate@v3
-      timeout-minutes: 60
-      with:
-        sudo: false
-        msys2-location: ${{ steps.setup-msys2.outputs.msys2-location }}
 
     - name: Upload build artifacts
       if: always()

@@ -27,6 +27,7 @@ jobs:
     runs-on: [
       "self-hosted",
       "1ES.Pool=onnxruntime-ep-Ubuntu2404-AMD-CPU",
+      "1ES.ImageOverride=Onnxruntime-Ubuntu-2204-CPU-nvme-full",
       "JobId=trtep-linux-x64-image-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
     name: Build Image CUDA${{ matrix.cuda_version }} TRT${{ matrix.trt_version }}
@@ -130,6 +131,7 @@ jobs:
     runs-on: [
       "self-hosted",
       "1ES.Pool=onnxruntime-ep-Ubuntu2404-AMD-CPU",
+      "1ES.ImageOverride=Onnxruntime-Ubuntu-2204-CPU-nvme-full",
       "JobId=trtep-linux-x64-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
     needs: build-matrix
@@ -187,6 +189,7 @@ jobs:
     runs-on: [
       "self-hosted",
       "1ES.Pool=onnxruntime-ep-Ubuntu2404-AMD-CPU",
+      "1ES.ImageOverride=Onnxruntime-Ubuntu-2204-CPU-nvme-full",
       "JobId=ort-linux-x64-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
     needs: build-matrix

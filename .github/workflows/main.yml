@@ -395,13 +395,13 @@ jobs:
       ARTIFACT_NAME: orttrtep_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}.results
 
     steps:
-    - name: Show environment
-      run: |
-        env
-        which nvidia-smi 2> /dev/null
-        which nvcc 2> /dev/null
-        find / -name "nvidia-smi" 2> /dev/null
-        find / -name "nvcc" 2> /dev/null
+    # - name: Show environment
+    #   run: |
+    #     env
+    #     which nvidia-smi 2> /dev/null
+    #     which nvcc 2> /dev/null
+    #     find / -name "nvidia-smi" 2> /dev/null
+    #     find / -name "nvcc" 2> /dev/null
   
     - name: Setup python
       uses: actions/setup-python@v6

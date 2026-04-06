@@ -398,10 +398,10 @@ jobs:
     - name: Show environment
       run: |
         env
-        which nvidia-smi
-        which nvcc
-        find / -name "nvidia-smi"
-        find / -name "nvcc"
+        which nvidia-smi 2> /dev/null
+        which nvcc 2> /dev/null
+        find / -name "nvidia-smi" 2> /dev/null
+        find / -name "nvcc" 2> /dev/null
   
     - name: Setup python
       uses: actions/setup-python@v6

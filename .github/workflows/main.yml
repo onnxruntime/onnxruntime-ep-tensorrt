@@ -504,14 +504,18 @@ jobs:
       run: |
         env
         ls -lR "$GITHUB_WORKSPACE"
+        echo "Make it executable"
         chmod +x "$GITHUB_WORKSPACE/onnxruntime/onnxruntime_provider_test"
 
-        strace -f -e trace=file "$GITHUB_WORKSPACE/onnxruntime/onnxruntime_provider_test"
+        # echo "Run stacktrace"
+        # strace -f -e trace=file "$GITHUB_WORKSPACE/onnxruntime/onnxruntime_provider_test"
 
+        echo "Run test_runner"
         python "$GITHUB_WORKSPACE/.github/scripts/test_runner.py"   \
           "$GITHUB_WORKSPACE/onnxruntime/onnxruntime_provider_test" \
           "${{ env.ARTIFACT_NAME }}"
 
+        echo "List workspace"
         ls -l "$GITHUB_WORKSPACE"
 
     - name: Upload build artifacts

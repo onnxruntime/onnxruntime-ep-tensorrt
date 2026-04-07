@@ -414,6 +414,7 @@ jobs:
       run: |
         import subprocess
         import sys
+        from pathlib import Path
 
         REQUIRED_CUDA_VERSION = "12.9"
         REQUIRED_MIN_DRIVER_VERSION = 525
@@ -434,6 +435,18 @@ jobs:
                 return float(output.strip())
             except subprocess.CalledProcessError:
                 return None
+
+        path1 = Path(r'/usr/local/nvidia')
+        if path1.exists():
+            print([_ for _ in path1.rglob('nvidia-smi')])
+        else:
+            print(f"Can't find nvidia-smi in {path1}")
+
+        path2 = Path(r'/usr/local/cuda')
+        if path2.exists():
+            print([_ for _ in path2.rglob('nvidia-smi')])
+        else:
+            print(f"Can't find nvidia-smi in {path2}")
 
         cuda_version = get_cuda_version()
         driver_version = get_driver_version()

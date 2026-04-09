@@ -30,7 +30,7 @@ jobs:
       fail-fast: false
       matrix:
         build_type: [Debug, RelWithDebInfo]
-        cuda_version: ['12.9', '13.0']
+        cuda_version: ['12.9'] #, '13.0']
         trt_version: ['10.14.1.48']
 
     runs-on: [
@@ -122,24 +122,26 @@ jobs:
       fail-fast: false
       matrix:
         build_type: [Debug, RelWithDebInfo]
-        cuda_version: ['12.9', '13.0']
+        cuda_version: ['12.9'] #, '13.0']
+        trt_version: ['10.14.1.48']
 
     runs-on: [
       "self-hosted",
       "1ES.Pool=onnxruntime-ep-github-Win",
       "JobId=ort-win-x64-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
-    name: Build ORT Win-x64 CUDA${{ matrix.cuda_version }} ${{ matrix.build_type }}
+    name: Build ORT Win-x64 CUDA${{ matrix.cuda_version }} TRT${{ matrix.trt_version }} ${{ matrix.build_type }}
 
     environment: Windows_x64
     env:
       ALLOW_RELEASED_ONNX_OPSET_ONLY: '0'
       AZCOPY_AUTO_LOGIN_TYPE: ${{ vars.AZCOPY_AUTO_LOGIN_TYPE }}
       AZCOPY_MSI_CLIENT_ID: ${{ vars.AZCOPY_MSI_CLIENT_ID }}
-      ARTIFACT_NAME: ort_win-x64_cuda${{ matrix.cuda_version }}_${{ matrix.build_type }}
+      ARTIFACT_NAME: ort_win-x64_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}
       setVcvars: true
       BUILD_TYPE: ${{ matrix.build_type }}
       CUDA_VERSION: ${{ matrix.cuda_version }}
+      TRT_VERSION: ${{ matrix.trt_version }}
 
     steps:
     - name: Checkout Code
@@ -166,6 +168,20 @@ jobs:
     - name: Install python modules
       shell: cmd
       run: python -m pip install -r .\tools\ci_build\github\windows\python\requirements.txt
+
+    - name: Download CUDA SDK v${{ matrix.cuda_version }}
+      shell: pwsh
+      run: |
+        azcopy.exe cp --recursive "https://lotusscus.blob.core.windows.net/models/cuda_sdk/v${env:CUDA_VERSION}" "${env:RUNNER_TEMP}"
+        Get-ChildItem -Path "${env:RUNNER_TEMP}"
+        Get-ChildItem -Path "${env:RUNNER_TEMP}\v${env:CUDA_VERSION}" -Recurse
+
+    - name: Download TensorRT-${{ matrix.trt_version }}.Windows.win10.cuda-${{ matrix.cuda_version }}
+      shell: pwsh
+      run: |
+        azcopy.exe cp --recursive "https://lotusscus.blob.core.windows.net/models/local/TensorRT-${env:TRT_VERSION}.Windows.win10.cuda-${env:CUDA_VERSION}" "${env:RUNNER_TEMP}"
+        Get-ChildItem -Path "${env:RUNNER_TEMP}"
+        Get-ChildItem -Path "${env:RUNNER_TEMP}\TensorRT-${env:TRT_VERSION}.Windows.win10.cuda-${env:CUDA_VERSION}" -Recurse
 
     - name: Setup Nuget
       uses: nuget/setup-nuget@v2
@@ -216,7 +232,12 @@ jobs:
           --build_shared_lib `
           --use_vcpkg `
           --use_vcpkg_ms_internal_asset_cache `
+          --use_binskim_compliant_compile_flags `
           --disable_memleak_checker `
+          --enable_onnx_tests `
+          --cuda_home=${env:RUNNER_TEMP}\v${env:CUDA_VERSION} `
+          --use_tensorrt `
+          --tensorrt_home=${env:RUNNER_TEMP}\TensorRT-${env:TRT_VERSION}.Windows.win10.cuda-${env:CUDA_VERSION} `
           --target onnxruntime_provider_test
         if ($lastExitCode -ne 0) {
           exit $lastExitCode
@@ -254,7 +275,7 @@ jobs:
       fail-fast: false
       matrix:
         build_type: [Debug, RelWithDebInfo]
-        cuda_version: ['12.9', '13.0']
+        cuda_version: ['12.9'] #, '13.0']
         trt_version: ['10.14.1.48']
 
     runs-on: [
@@ -310,7 +331,7 @@ jobs:
     - name: Download ORT artifacts
       uses: actions/download-artifact@v7
       with:
-        name: ort_win-x64_cuda${{ matrix.cuda_version }}_${{ matrix.build_type }}
+        name: ort_win-x64_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}
         path: onnxruntime
 
     - name: Setup python

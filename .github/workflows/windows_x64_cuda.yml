@@ -367,3 +367,82 @@ jobs:
         path: |
             ${{ env.ARTIFACT_NAME }}.xml
             ${{ env.ARTIFACT_NAME }}.log
+
+# Packaging ###########################################################################################################
+
+  packaging:
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [Debug, RelWithDebInfo]
+        cuda_version: ['12.9'] #, '13.0']
+        trt_version: ['10.14.1.48']
+
+    runs-on: [
+      "self-hosted",
+      "1ES.Pool=onnxruntime-ep-github-Win",
+      "JobId=trtep-win-x64-packaging-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
+    ]
+    name: Package TRTEp Win-x64 CUDA${{ matrix.cuda_version }} TRT${{ matrix.trt_version }} ${{ matrix.build_type }}
+    needs: [run-tests]
+
+    environment: Windows_x64
+    env:
+      AZCOPY_AUTO_LOGIN_TYPE: ${{ vars.AZCOPY_AUTO_LOGIN_TYPE }}
+      AZCOPY_MSI_CLIENT_ID: ${{ vars.AZCOPY_MSI_CLIENT_ID }}
+      ARTIFACT_NAME: orttrtep_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}.nuget
+      BUILD_TYPE: ${{ matrix.build_type }}
+      CUDA_VERSION: ${{ matrix.cuda_version }}
+      TRT_VERSION: ${{ matrix.trt_version }}
+
+    steps:
+    - name: Setup .NET SDK
+      uses: actions/setup-dotnet@v5
+      env:
+        PROCESSOR_ARCHITECTURE: x64
+      with:
+        dotnet-version: '9.x'
+
+    - name: Use Nuget
+      uses: nuget/setup-nuget@v3
+      with:
+        nuget-version: '6.x'
+
+    - name: Checkout Code
+      uses: actions/checkout@v6
+      with:
+        sparse-checkout: csharp
+        sparse-checkout-cone-mode: false
+
+    - name: Download TRT Ep
+      uses: actions/download-artifact@v7
+      with:
+        name: Windows_x64_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}
+        path: orttrtep
+
+    - name: Package
+      shell: pwsh
+      run: |
+        $SourceDir = ".\orttrtep\bin"
+        $TargetDir = ".\csharp\Microsoft.ML.OnnxRuntime.EP.TensorRT\runtimes\win-x64\native"
+        $null = New-Item -Type Directory -Force $TargetDir
+        Move-Item "$SourceDir\ORTTensorRTEp.dll" -Destination $TargetDir
+        Move-Item "$SourceDir\ORTTensorRTEp.pdb" -Destination $TargetDir
+
+        Get-ChildItem -Path "$TargetDir"
+
+        dotnet build .\csharp\Microsoft.ML.OnnxRuntime.EP.TensorRT\Microsoft.ML.OnnxRuntime.EP.TensorRT.csproj -c ${env:BUILD_TYPE}
+        dotnet pack .\csharp\Microsoft.ML.OnnxRuntime.EP.TensorRT\Microsoft.ML.OnnxRuntime.EP.TensorRT.csproj -c ${env:BUILD_TYPE}
+
+        $null = New-Item -Type Directory -Force "local_feed"
+        Copy-Item ".\csharp\Microsoft.ML.OnnxRuntime.EP.TensorRT\bin\${env:BUILD_TYPE}\Microsoft.ML.OnnxRuntime.EP.TensorRT.*.nupkg" -Destination ".\local_feed"
+        Copy-Item ".\csharp\Microsoft.ML.OnnxRuntime.EP.TensorRT\bin\${env:BUILD_TYPE}\Microsoft.ML.OnnxRuntime.EP.TensorRT.*.snupkg" -Destination ".\local_feed"
+
+        Get-ChildItem -Path "local_feed"
+
+    - name: Upload build artifacts
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ env.ARTIFACT_NAME }}
+        path: local_feed

@@ -5,7 +5,6 @@
 
 #include <gsl/gsl>
 #include <cassert>
-#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -56,23 +55,29 @@ void DestroyBuilderPlaceholder() {
 namespace trt_ep {
 
 TensorrtExecutionProviderFactory::TensorrtExecutionProviderFactory(const char* ep_name, const OrtLogger& default_logger, ApiPtrs apis)
-    : OrtEpFactory {}, ApiPtrs(apis), default_logger_{default_logger}, ep_name_{ep_name} {
+    : OrtEpFactory {},
+      ApiPtrs(apis),
+      default_logger_{default_logger},
+      ep_name_{ep_name},
+      ort_api_{apis.ort_api},
+      ep_api_{apis.ep_api} {
   ort_version_supported = ORT_API_VERSION;  // set to the ORT version we were compiled with.
   GetName = GetNameImpl;
   GetVendor = GetVendorImpl;
   GetVersion = GetVersionImpl;
-
   GetSupportedDevices = GetSupportedDevicesImpl;
-
   CreateEp = CreateEpImpl;
   ReleaseEp = ReleaseEpImpl;
-
   CreateAllocator = CreateAllocatorImpl;
   ReleaseAllocator = ReleaseAllocatorImpl;
-
   CreateDataTransfer = CreateDataTransferImpl;
+  IsStreamAware = IsStreamAwareImpl; 
+}
 
-  IsStreamAware = IsStreamAwareImpl;
+TensorrtExecutionProviderFactory::~TensorrtExecutionProviderFactory() {
+  if (kernel_registry_ != nullptr) {
+    ep_api_.ReleaseKernelRegistry(kernel_registry_);
+  }
 }
 
 const char* ORT_API_CALL TensorrtExecutionProviderFactory::GetNameImpl(const OrtEpFactory* this_ptr) noexcept {
@@ -90,30 +95,26 @@ const char* ORT_API_CALL TensorrtExecutionProviderFactory::GetVersionImpl(const 
   return factory->ep_version_.c_str();
 }
 
-OrtStatus* TensorrtExecutionProviderFactory::CreateMemoryInfoForDevices(int num_devices) {
-  cuda_gpu_memory_infos.reserve(num_devices);
-  cuda_pinned_memory_infos.reserve(num_devices);
+const OrtMemoryInfo* TensorrtExecutionProviderFactory::GetMemoryInfoByOrdinal(int cuda_ordinal, bool is_pinned) {
+    // Get default OrtMemoryInfo from factory's device cache
+    const OrtMemoryInfo* mem_info = nullptr;
+    auto* cache_entry = FindDeviceCacheEntryByOrdinal(cuda_ordinal);
+    if (cache_entry != nullptr) {
+        mem_info = is_pinned ? cache_entry->pinned_memory_info :
+                               cache_entry->device_memory_info; // Ort::MemoryInfo implicitly converts to OrtMemoryInfo*
+    }
+    return mem_info;
+}
 
-  for (int device_id = 0; device_id < num_devices; ++device_id) {
-    OrtMemoryInfo* mem_info = nullptr;
-    RETURN_IF_ERROR(ort_api.CreateMemoryInfo_V2("Cuda", OrtMemoryInfoDeviceType_GPU,
-                                                /* vendor_id */ kNvidiaVendorId,
-                                                /* device_id */ device_id, OrtDeviceMemoryType_DEFAULT,
-                                                /*alignment*/ 0, OrtAllocatorType::OrtDeviceAllocator, &mem_info));
-
-    cuda_gpu_memory_infos[device_id] = MemoryInfoUniquePtr(mem_info, ort_api.ReleaseMemoryInfo);
-
-    // HOST_ACCESSIBLE memory should use the non-CPU device type
-    mem_info = nullptr;
-    RETURN_IF_ERROR(ort_api.CreateMemoryInfo_V2("CudaPinned", OrtMemoryInfoDeviceType_GPU,
-                                                /* vendor_id */ kNvidiaVendorId,
-                                                /* device_id */ device_id, OrtDeviceMemoryType_HOST_ACCESSIBLE,
-                                                /*alignment*/ 0, OrtAllocatorType::OrtDeviceAllocator, &mem_info));
-
-    cuda_pinned_memory_infos[device_id] = MemoryInfoUniquePtr(mem_info, ort_api.ReleaseMemoryInfo);
-  }
-
-  return nullptr;
+TensorrtExecutionProviderFactory::HardwareDeviceKey TensorrtExecutionProviderFactory::MakeDeviceKey(const OrtApi& ort_api,
+    const OrtHardwareDevice& device,
+    int cuda_ordinal) {
+    return {
+        ort_api.HardwareDevice_Type(&device),
+        ort_api.HardwareDevice_VendorId(&device),
+        ort_api.HardwareDevice_DeviceId(&device),
+        cuda_ordinal,
+    };
 }
 
 OrtStatus* ORT_API_CALL TensorrtExecutionProviderFactory::GetSupportedDevicesImpl(
@@ -126,90 +127,130 @@ OrtStatus* ORT_API_CALL TensorrtExecutionProviderFactory::GetSupportedDevicesImp
   size_t& num_ep_devices = *p_num_ep_devices;
   auto* factory = static_cast<TensorrtExecutionProviderFactory*>(this_ptr);
 
-  // Create two memory infos per device.
-  // The memory info is required to create allocator and gpu data transfer.
-  int num_cuda_devices = 0;
-  cudaError_t cuda_err = cudaGetDeviceCount(&num_cuda_devices);
+  // Clear stale ordinal mappings from any prior enumeration.
+  {
+    std::lock_guard<std::mutex> lock(factory->device_cache_mutex_);
+    factory->ordinal_to_device_key_.clear();
+  }
+
+  auto release_ep_devices = [&](OrtStatus* status) -> OrtStatus* {
+    for (size_t j = 0; j < num_ep_devices; ++j) {
+      factory->ep_api.ReleaseEpDevice(ep_devices[j]);
+      ep_devices[j] = nullptr;
+    }
+    num_ep_devices = 0;
+    return status;
+  };
+
+  // Query CUDA device count once upfront so we can validate assigned ordinals.
+  int cuda_device_count = 0;
+  cudaError_t cuda_err = cudaGetDeviceCount(&cuda_device_count);
   if (cuda_err != cudaSuccess) {
-      return factory->ort_api.CreateStatus(ORT_EP_FAIL, cudaGetErrorString(cuda_err));
+    cuda_device_count = 0;  // no CUDA devices available
   }
 
-  if (num_cuda_devices == 0) {
-    return factory->ort_api.CreateStatus(ORT_EP_FAIL, "No CUDA devices found.");
-  }
-
-  RETURN_IF_ERROR(factory->CreateMemoryInfoForDevices(num_cuda_devices));
-
-  int32_t device_id = 0;
-
+  int cuda_device_index = 0;
   for (size_t i = 0; i < num_devices && num_ep_devices < max_ep_devices; ++i) {
-    // C API
     const OrtHardwareDevice& device = *devices[i];
 
-    if (factory->ort_api.HardwareDevice_Type(&device) == OrtHardwareDeviceType::OrtHardwareDeviceType_GPU &&
-        factory->ort_api.HardwareDevice_VendorId(&device) == kNvidiaVendorId) {
-      // These can be returned as nullptr if you have nothing to add.
-      OrtKeyValuePairs* ep_metadata = nullptr;
-      OrtKeyValuePairs* ep_options = nullptr;
-      factory->ort_api.CreateKeyValuePairs(&ep_metadata);
-      factory->ort_api.CreateKeyValuePairs(&ep_options);
-
-      // The ep options can be provided here as default values.
-      // Users can also call SessionOptionsAppendExecutionProvider_V2 C API with provided ep options to override.
-      factory->ort_api.AddKeyValuePair(ep_metadata, "gpu_type", "data center");  // random example using made up values
-      factory->ort_api.AddKeyValuePair(ep_options, "trt_builder_optimization_level", "3");
-
-      // OrtEpDevice copies ep_metadata and ep_options.
-      OrtEpDevice* ep_device = nullptr;
-      auto* status = factory->ort_api.GetEpApi()->CreateEpDevice(factory, &device, ep_metadata, ep_options,
-                                                                 &ep_device);
-
-      factory->ort_api.ReleaseKeyValuePairs(ep_metadata);
-      factory->ort_api.ReleaseKeyValuePairs(ep_options);
-
-      if (status != nullptr) {
-        return status;
-      }
-
-      RETURN_IF_NOT(device_id < num_cuda_devices,
-                    "The device_id for supported device exceeds the number of CUDA devices.");
-
-      const OrtMemoryInfo* cuda_gpu_mem_info = factory->cuda_gpu_memory_infos[device_id].get();
-      const OrtMemoryInfo* cuda_pinned_mem_info = factory->cuda_pinned_memory_infos[device_id].get();
-
-      // Register the allocator info required by TRT EP.
-      RETURN_IF_ERROR(factory->ep_api.EpDevice_AddAllocatorInfo(ep_device, cuda_gpu_mem_info));
-      RETURN_IF_ERROR(factory->ep_api.EpDevice_AddAllocatorInfo(ep_device, cuda_pinned_mem_info));
-
-      // Get memory device from memory info for gpu data transfer
-      factory->cuda_gpu_mem_devices.push_back(factory->ep_api.MemoryInfo_GetMemoryDevice(cuda_gpu_mem_info));
-      factory->cuda_pinned_mem_devices.push_back(factory->ep_api.MemoryInfo_GetMemoryDevice(cuda_pinned_mem_info));
-
-      ep_devices[num_ep_devices++] = ep_device;
-      ++device_id;
+    if (factory->ort_api.HardwareDevice_Type(&device) != OrtHardwareDeviceType::OrtHardwareDeviceType_GPU ||
+        factory->ort_api.HardwareDevice_VendorId(&device) != kNvidiaVendorId) {
+      continue;
     }
 
-    // C++ API equivalent. Throws on error.
-    //{
-    //  Ort::ConstHardwareDevice device(devices[i]);
-    //  if (device.Type() == OrtHardwareDeviceType::OrtHardwareDeviceType_GPU) {
-    //    Ort::KeyValuePairs ep_metadata;
-    //    Ort::KeyValuePairs ep_options;
-    //    ep_metadata.Add("version", "0.1");
-    //    ep_options.Add("trt_builder_optimization_level", "3");
-    //    Ort::EpDevice ep_device{*this_ptr, device, ep_metadata.GetConst(), ep_options.GetConst()};
-    //    ep_devices[num_ep_devices++] = ep_device.release();
-    //  }
-    //}
+    // CUDA uses contiguous ordinals for CUDA-visible NVIDIA devices. Build that
+    // mapping from the filtered hardware-device list instead of relying on the
+    // ORT hardware device id, which is not guaranteed to be a CUDA ordinal.
+    int current_device_id = cuda_device_index++;
+
+    // Validate the assigned ordinal is within the range of CUDA-visible devices.
+    // If hardware enumeration reports GPUs not visible to CUDA (e.g. due to
+    // CUDA_VISIBLE_DEVICES), skip them to avoid failures in allocator/stream creation.
+    if (current_device_id >= cuda_device_count) {
+      continue;
+    }
+
+    const auto device_key = MakeDeviceKey(factory->ort_api, device, current_device_id);
+    DeviceCacheEntry* cache_entry = nullptr;
+    {
+      std::lock_guard<std::mutex> lock(factory->device_cache_mutex_);
+      auto [it, inserted] = factory->device_cache_.try_emplace(device_key);
+      if (inserted) {
+        it->second.cuda_device_id = current_device_id;
+        it->second.device_memory_info = Ort::MemoryInfo{"Cuda",
+                                                        OrtMemoryInfoDeviceType_GPU,
+                                                        kNvidiaVendorId,
+                                                        static_cast<uint32_t>(current_device_id),
+                                                        OrtDeviceMemoryType_DEFAULT,
+                                                        /*alignment is default*/ 0,
+                                                        OrtAllocatorType::OrtDeviceAllocator};
+        it->second.pinned_memory_info = Ort::MemoryInfo{"CudaPinned",
+                                                        OrtMemoryInfoDeviceType_GPU,
+                                                        kNvidiaVendorId,
+                                                        static_cast<uint32_t>(current_device_id),
+                                                        OrtDeviceMemoryType_HOST_ACCESSIBLE,
+                                                        /*alignment is default*/ 0,
+                                                        OrtAllocatorType::OrtDeviceAllocator};
+      }
+
+      cache_entry = &it->second;
+      current_device_id = cache_entry->cuda_device_id;
+      // Build ordinal -> key mapping for CreateAllocatorImpl lookups.
+      factory->ordinal_to_device_key_[current_device_id] = device_key;
+    }
+
+    // These can be returned as nullptr if EP has nothing to add.
+    OrtKeyValuePairs* ep_metadata = nullptr;
+    OrtKeyValuePairs* ep_options = nullptr;
+    factory->ort_api.CreateKeyValuePairs(&ep_metadata);
+    factory->ort_api.CreateKeyValuePairs(&ep_options);
+    factory->ort_api.AddKeyValuePair(ep_metadata, "cuda_device_id", std::to_string(current_device_id).c_str());
+    factory->ort_api.AddKeyValuePair(ep_options, "device_id", std::to_string(current_device_id).c_str());
+
+    // Get CUDA device properties for metadata
+    {
+      cudaDeviceProp prop;
+      if (cudaGetDeviceProperties(&prop, current_device_id) == cudaSuccess) {
+        factory->ort_api.AddKeyValuePair(ep_metadata, "cuda_device_name", prop.name);
+        factory->ort_api.AddKeyValuePair(ep_metadata, "cuda_compute_capability",
+                                         (std::to_string(prop.major) + "." + std::to_string(prop.minor)).c_str());
+      }
+    }
+
+    // OrtEpDevice copies ep_metadata and ep_options.
+    OrtEpDevice* ep_device = nullptr;
+    auto* status = factory->ort_api.GetEpApi()->CreateEpDevice(factory, &device, ep_metadata, ep_options, &ep_device);
+
+    factory->ort_api.ReleaseKeyValuePairs(ep_metadata);
+    factory->ort_api.ReleaseKeyValuePairs(ep_options);
+
+    if (status != nullptr) {
+      return release_ep_devices(status);
+    }
+
+    auto release_current_ep_device = [factory](OrtEpDevice* device) {
+      factory->ep_api.ReleaseEpDevice(device);
+    };
+
+    // ep_device_guard owns the current device. On error, release_ep_devices cleans up
+    // previously committed devices [0, num_ep_devices), while the guard cleans up this one.
+    std::unique_ptr<OrtEpDevice, decltype(release_current_ep_device)> ep_device_guard(ep_device, release_current_ep_device);
+
+    // Register allocator info for GPU device memory
+    status = factory->ep_api.EpDevice_AddAllocatorInfo(ep_device, cache_entry->device_memory_info);
+    if (status != nullptr) {
+      return release_ep_devices(status);
+    }
+
+    // Register allocator info for pinned host memory associated with the
+    // same CUDA ordinal as the device allocator above.
+    status = factory->ep_api.EpDevice_AddAllocatorInfo(ep_device, cache_entry->pinned_memory_info);
+    if (status != nullptr) {
+      return release_ep_devices(status);
+    }
+
+    ep_devices[num_ep_devices++] = ep_device_guard.release();
   }
-
-  // Create gpu data transfer
-  auto data_transfer_impl = std::make_unique<TRTEpDataTransfer>(static_cast<const ApiPtrs&>(*factory),
-                                                                factory->cuda_gpu_mem_devices,    // device memory
-                                                                factory->cuda_pinned_mem_devices  // shared memory
-  );
-
-  factory->data_transfer_impl = std::move(data_transfer_impl);
 
   return nullptr;
 }
@@ -315,7 +356,9 @@ OrtStatus* ORT_API_CALL TensorrtExecutionProviderFactory::CreateDataTransferImpl
     OrtEpFactory* this_ptr,
     OrtDataTransferImpl** data_transfer) noexcept {
   auto& factory = *static_cast<TensorrtExecutionProviderFactory*>(this_ptr);
-  *data_transfer = factory.data_transfer_impl.get();
+
+  auto data_transfer_impl = std::make_unique<TRTEpDataTransfer>(static_cast<const ApiPtrs&>(factory));
+  *data_transfer = data_transfer_impl.release();
 
   return nullptr;
 }
@@ -333,20 +376,37 @@ OrtStatus* TensorrtExecutionProviderFactory::GetKernelRegistryForEp(TensorrtExec
   }
 
   if (kernel_registry_ == nullptr) {
-    // Optional state that is provided to kernels on creation (can be null).
-    // We pass the OrtDataTransferImpl created by this factory to allow kernels to copy data between devices.
-    void* op_kernel_state = static_cast<OrtDataTransferImpl*>(data_transfer_impl.get());
     const char* ep_name = ep.GetName(static_cast<const OrtEp*>(&ep));
 
     // This statement creates the kernel registry and caches it in the OrtEpFactory instance.
     // We assume that all EPs created by this factory can use the same kernel registry. This may not be the
     // case in a more complex OrtEpFactory that can create EP instances that are each configured for different
     // hardware devices. In such a scenario, a different kernel registry may be created for each EP configuration.
-    RETURN_IF_ERROR(CreateKernelRegistry(ep_name, op_kernel_state, &kernel_registry_));
+    RETURN_IF_ERROR(CreateKernelRegistry(ep_name, nullptr, &kernel_registry_));
   }
 
   *out_kernel_registry = kernel_registry_;
   return nullptr;
+}
+
+TensorrtExecutionProviderFactory::DeviceCacheEntry* TensorrtExecutionProviderFactory::FindDeviceCacheEntryByOrdinalLocked(int cuda_ordinal) {
+    auto key_it = ordinal_to_device_key_.find(cuda_ordinal);
+    if (key_it == ordinal_to_device_key_.end()) {
+        return nullptr;
+    }
+    auto cache_it = device_cache_.find(key_it->second);
+    if (cache_it == device_cache_.end()) {
+        return nullptr;
+    }
+    return &cache_it->second;
+}
+
+// IMPORTANT: Entries are never erased from device_cache_ after insertion.
+// This guarantees pointer stability for DeviceCacheEntry* returned by
+// FindDeviceCacheEntryByOrdinal() after the lock is released.
+TensorrtExecutionProviderFactory::DeviceCacheEntry* TensorrtExecutionProviderFactory::FindDeviceCacheEntryByOrdinal(int cuda_ordinal) {
+    std::lock_guard<std::mutex> lock(device_cache_mutex_);
+    return FindDeviceCacheEntryByOrdinalLocked(cuda_ordinal);
 }
 
 }  // namespace trt_ep
@@ -363,6 +423,21 @@ EXPORT_SYMBOL OrtStatus* CreateEpFactories(const char* registration_name, const 
   const OrtApi* ort_api = ort_api_base->GetApi(ORT_API_VERSION);
   const OrtEpApi* ort_ep_api = ort_api->GetEpApi();
   const OrtModelEditorApi* model_editor_api = ort_api->GetModelEditorApi();
+
+  // Fail fast if CUDA device is not available.
+  int num_cuda_devices = 0;
+  const cudaError_t cuda_err = cudaGetDeviceCount(&num_cuda_devices);
+  if (cuda_err != cudaSuccess) {
+    return ort_api->CreateStatus(ORT_EP_FAIL, cudaGetErrorString(cuda_err));
+  }
+
+  if (num_cuda_devices == 0) {
+    Ort::ThrowOnError(ort_api->Logger_LogMessage(default_logger,
+                      OrtLoggingLevel::ORT_LOGGING_LEVEL_WARNING,
+                      "No CUDA devices found on the system."
+                      "TensorRT execution provider will still be created but will not be able to run any models.",
+                      ORT_FILE, __LINE__, __FUNCTION__));
+  }
 
   // Manual init for the C++ API
   Ort::InitApi(ort_api);

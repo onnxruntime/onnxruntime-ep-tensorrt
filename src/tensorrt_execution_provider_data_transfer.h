@@ -9,9 +9,7 @@
 namespace trt_ep {
 
 struct TRTEpDataTransfer : OrtDataTransferImpl, ApiPtrs {
-  TRTEpDataTransfer(ApiPtrs api_ptrs, std::vector<const OrtMemoryDevice*>& device_mem_infos,
-                    std::vector<const OrtMemoryDevice*>& shared_mem_infos)
-      : ApiPtrs(api_ptrs), cuda_gpu_mem_devices_{device_mem_infos}, cuda_pinned_mem_devices_{shared_mem_infos} {
+  TRTEpDataTransfer(ApiPtrs api_ptrs) : OrtDataTransferImpl{}, ApiPtrs(api_ptrs) {
     CanCopy = CanCopyImpl;
     CopyTensors = CopyTensorsImpl;
     Release = ReleaseImpl;
@@ -26,9 +24,5 @@ struct TRTEpDataTransfer : OrtDataTransferImpl, ApiPtrs {
                                                  OrtValue** dst_tensors_ptr, OrtSyncStream** streams_ptr,
                                                  size_t num_tensors) noexcept;
   static void ORT_API_CALL ReleaseImpl(OrtDataTransferImpl* this_ptr) noexcept;
-
- private:
-  std::vector<const OrtMemoryDevice*>& cuda_gpu_mem_devices_;
-  std::vector<const OrtMemoryDevice*>& cuda_pinned_mem_devices_;
 };
 }  // namespace trt_ep

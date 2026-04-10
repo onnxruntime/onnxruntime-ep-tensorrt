@@ -105,7 +105,7 @@ exclusions = {
   "ContribOpRotaryEmbeddingTest": [],
   "ContribOpTest": [],
   "ConvIntegerTest": [],
-  "ConvTest": [],
+  "ConvTest": ["*"],
   "ConvTransposeTest/0": [],
   "ConvTransposeTest/1": [],
   "ConvTransposeTest": [

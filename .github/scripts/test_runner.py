@@ -19,6 +19,9 @@ from pathlib import Path
 print("cwd: ", os.getcwd())
 print("exe: ", sys.argv[1])
 
+# Enable TRT builder placeholder to avoid repeated library load/unload during tests
+os.environ["ORT_TRT_EP_ENABLE_BUILDER_PLACEHOLDER"] = "1"
+
 # Map of test suite name to list of tests to exclude.
 # Use "[*]" as value to exclude the entire test suite.
 exclusions = {

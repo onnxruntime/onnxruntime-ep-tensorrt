@@ -5,11 +5,53 @@
 
 #include <gsl/gsl>
 #include <cassert>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
+
+// ---------------------------------------------------------------------------
+// TensorRT builder placeholder for test scenarios.
+//
+// TensorRT loads/unloads heavy internal libraries every time all IBuilder
+// instances are destroyed. During unit testing (e.g., onnxruntime_provider_test)
+// EPs are rapidly created and torn down, causing repeated overhead.
+//
+// ORT's test_main.cc has the same optimization behind `#ifdef USE_TENSORRT`,
+// but that define is never set for plugin EPs. Instead we guard creation with
+// an environment variable that the test harness can set:
+//
+//   set ORT_TRT_EP_ENABLE_BUILDER_PLACEHOLDER=1
+//
+// The placeholder is created once in CreateEpFactories() and destroyed in
+// ReleaseEpFactory(), matching the factory's lifetime.
+// ---------------------------------------------------------------------------
+namespace {
+
+class PlaceholderTrtLogger : public nvinfer1::ILogger {
+ public:
+  void log(Severity /*severity*/, const char* /*msg*/) noexcept override {}
+};
+
+PlaceholderTrtLogger g_placeholder_trt_logger;
+std::unique_ptr<nvinfer1::IBuilder> g_trt_builder_placeholder;
+
+void MaybeCreateBuilderPlaceholder() {
+  if (g_trt_builder_placeholder) return;  // already created
+
+  const char* env = std::getenv("ORT_TRT_EP_ENABLE_BUILDER_PLACEHOLDER");
+  if (env != nullptr && std::string(env) == "1") {
+    g_trt_builder_placeholder.reset(nvinfer1::createInferBuilder(g_placeholder_trt_logger));
+  }
+}
+
+void DestroyBuilderPlaceholder() {
+  g_trt_builder_placeholder.reset();
+}
+
+}  // namespace
 
 namespace trt_ep {
 
@@ -325,6 +367,11 @@ EXPORT_SYMBOL OrtStatus* CreateEpFactories(const char* registration_name, const 
   // Manual init for the C++ API
   Ort::InitApi(ort_api);
 
+  // Create TRT builder placeholder if running under a test harness.
+  // This prevents TensorRT from repeatedly loading/unloading internal
+  // libraries as EP instances are created and destroyed across tests.
+  MaybeCreateBuilderPlaceholder();
+
   // Factory could use registration_name or define its own EP name.
   std::unique_ptr<OrtEpFactory> factory = std::make_unique<trt_ep::TensorrtExecutionProviderFactory>(registration_name, *default_logger, ApiPtrs{*ort_api, *ort_ep_api, *model_editor_api});
 
@@ -341,6 +388,10 @@ EXPORT_SYMBOL OrtStatus* CreateEpFactories(const char* registration_name, const 
 
 EXPORT_SYMBOL OrtStatus* ReleaseEpFactory(OrtEpFactory* factory) {
   delete static_cast<trt_ep::TensorrtExecutionProviderFactory*>(factory);
+
+  // Release the placeholder builder when the last factory is torn down.
+  DestroyBuilderPlaceholder();
+
   return nullptr;
 }
 

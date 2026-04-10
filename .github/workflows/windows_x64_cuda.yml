@@ -232,11 +232,6 @@ jobs:
           --build_shared_lib `
           --use_binskim_compliant_compile_flags `
           --disable_memleak_checker `
-          --enable_onnx_tests `
-          --cuda_home=${env:RUNNER_TEMP}\v${env:CUDA_VERSION} `
-          --cmake_extra_defines CMAKE_CUDA_ARCHITECTURES=${env:CMAKE_CUDA_ARCHITECTURES} CMAKE_CUDA_COMPILER=${env:RUNNER_TEMP}\v${env:CUDA_VERSION}\bin\nvcc.exe `
-          --use_tensorrt `
-          --tensorrt_home=${env:RUNNER_TEMP}\TensorRT-${env:TRT_VERSION}.Windows.win10.cuda-${env:CUDA_VERSION} `
           --target onnxruntime_provider_test
         if ($lastExitCode -ne 0) {
           exit $lastExitCode

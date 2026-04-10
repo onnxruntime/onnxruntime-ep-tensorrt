@@ -3050,11 +3050,12 @@ OrtStatus* TRTEpNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_ptr, void*
   std::unordered_map<std::string, DDSOutputAllocatorMap>& dds_output_allocator_maps = ep.GetDDSOutputAllocators();
   auto& dds_output_allocator_map = dds_output_allocator_maps[fused_node_name];
 
-  // Get default OrtMemoryInfo from factory
-  const OrtMemoryInfo* mem_info = nullptr;
-  if (ep.factory_.cuda_gpu_memory_infos.find(device_id) !=
-      ep.factory_.cuda_gpu_memory_infos.end()) {
-    mem_info = ep.factory_.cuda_gpu_memory_infos[device_id].get();
+  // Get default OrtMemoryInfo from factory's device cache
+  const OrtMemoryInfo* mem_info = ep.factory_.GetMemoryInfoByOrdinal(device_id, /* is pinned */false);
+  if (mem_info == nullptr) {
+    std::string err_msg = "TensorRT EP failed to get OrtMemoryInfo for device_id "
+                          + std::to_string(device_id) + " from provider factory.";
+    return ep.ort_api.CreateStatus(ORT_EP_FAIL, err_msg.c_str());
   }
 
   // Get allocator from OrtKernelContext
@@ -3770,11 +3771,12 @@ OrtStatus* TRTEpEpContextNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_p
   std::unordered_map<std::string, std::vector<int32_t>> shape_tensor_values;        // This map holds "shape tensor -> shape values" for the shape tensor input across this inference run
   std::unordered_map<std::string, std::vector<int64_t>> shape_tensor_values_int64;  // same as above but for int64 shape tensor input
 
-  // Get default OrtMemoryInfo from factory
-  const OrtMemoryInfo* mem_info = nullptr;
-  if (ep.factory_.cuda_gpu_memory_infos.find(device_id) !=
-      ep.factory_.cuda_gpu_memory_infos.end()) {
-    mem_info = ep.factory_.cuda_gpu_memory_infos[device_id].get();
+  // Get default OrtMemoryInfo from factory's device cache
+  const OrtMemoryInfo* mem_info = ep.factory_.GetMemoryInfoByOrdinal(device_id, /* is pinned */false);
+  if (mem_info == nullptr) {
+      std::string err_msg = "TensorRT EP failed to get OrtMemoryInfo for device_id "
+          + std::to_string(device_id) + " from provider factory.";
+      return ep.ort_api.CreateStatus(ORT_EP_FAIL, err_msg.c_str());
   }
 
   // Get allocator from OrtKernelContext

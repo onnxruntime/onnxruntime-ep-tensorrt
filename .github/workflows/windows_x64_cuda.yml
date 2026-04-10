@@ -230,12 +230,13 @@ jobs:
           --parallel `
           --cmake_generator "Ninja" `
           --build_shared_lib `
-          --use_vcpkg `
-          --use_vcpkg_ms_internal_asset_cache `
           --use_binskim_compliant_compile_flags `
           --disable_memleak_checker `
           --enable_onnx_tests `
           --cuda_home=${env:RUNNER_TEMP}\v${env:CUDA_VERSION} `
+          --enable_cuda_minimal_build `
+          --cmake_extra_defines CMAKE_CUDA_ARCHITECTURES=${env:CMAKE_CUDA_ARCHITECTURES} `
+          --disable_generation_ops `
           --use_tensorrt `
           --tensorrt_home=${env:RUNNER_TEMP}\TensorRT-${env:TRT_VERSION}.Windows.win10.cuda-${env:CUDA_VERSION} `
           --target onnxruntime_provider_test

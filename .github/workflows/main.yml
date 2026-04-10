@@ -377,6 +377,7 @@ jobs:
     runs-on: [
       "self-hosted",
       "1ES.Pool=onnxruntime-ep-github-linux-a10",
+      "1ES.ImageOverride=onnxruntime-ubuntu2204-CUDA-A10",
       "JobId=linux-ort-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
     name: Linux Run Tests CUDA${{ matrix.cuda_version }} ${{ matrix.build_type }}
@@ -395,15 +396,6 @@ jobs:
       ARTIFACT_NAME: orttrtep_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}.results
 
     steps:
-    - name: Show environment
-      if: false
-      run: |
-        env
-        which nvidia-smi 2> /dev/null
-        which nvcc 2> /dev/null
-        find / -name "nvidia-smi" 2> /dev/null
-        find / -name "nvcc" 2> /dev/null
-  
     - name: Setup python
       uses: actions/setup-python@v6
       with:
@@ -411,7 +403,6 @@ jobs:
         architecture: x64
 
     - name: Check cuda compatibility
-      if: false
       shell: python
       run: |
         import subprocess
@@ -460,6 +451,15 @@ jobs:
             print("CUDA and NVIDIA driver are compatible.")
         else:
             sys.exit(f"Compatibility check failed: CUDA {cuda_version}, Driver {driver_version}")
+
+    - name: Show environment
+      run: |
+        env
+        echo "Locate nvcc"
+        which nvcc 2> /dev/null
+
+        echo "Locate nvidia-smi"
+        which nvidia-smi 2> /dev/null
 
     - name: Checkout Code
       uses: actions/checkout@v6

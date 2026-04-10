@@ -234,7 +234,6 @@ jobs:
           --disable_memleak_checker `
           --enable_onnx_tests `
           --cuda_home=${env:RUNNER_TEMP}\v${env:CUDA_VERSION} `
-          --enable_cuda_minimal_build `
           --cmake_extra_defines CMAKE_CUDA_ARCHITECTURES=${env:CMAKE_CUDA_ARCHITECTURES} CMAKE_CUDA_COMPILER=${env:RUNNER_TEMP}\v${env:CUDA_VERSION}\bin\nvcc.exe `
           --use_tensorrt `
           --tensorrt_home=${env:RUNNER_TEMP}\TensorRT-${env:TRT_VERSION}.Windows.win10.cuda-${env:CUDA_VERSION} `

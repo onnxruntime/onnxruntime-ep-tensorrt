@@ -223,7 +223,6 @@ jobs:
         # Execute the build process
         python.exe ${env:GITHUB_WORKSPACE}\tools\ci_build\build.py `
           --update `
-          --build `
           --config ${env:BUILD_TYPE} `
           --build_dir build `
           --skip_submodule_sync `
@@ -236,7 +235,6 @@ jobs:
           --cuda_home=${env:RUNNER_TEMP}\v${env:CUDA_VERSION} `
           --enable_cuda_minimal_build `
           --cmake_extra_defines CMAKE_CUDA_ARCHITECTURES=${env:CMAKE_CUDA_ARCHITECTURES} `
-          --disable_generation_ops `
           --use_tensorrt `
           --tensorrt_home=${env:RUNNER_TEMP}\TensorRT-${env:TRT_VERSION}.Windows.win10.cuda-${env:CUDA_VERSION} `
           --target onnxruntime_provider_test

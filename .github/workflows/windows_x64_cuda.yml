@@ -222,6 +222,7 @@ jobs:
 
         # Execute the build process
         python.exe ${env:GITHUB_WORKSPACE}\tools\ci_build\build.py `
+          --build `
           --update `
           --config ${env:BUILD_TYPE} `
           --build_dir build `
@@ -292,7 +293,7 @@ jobs:
       AZCOPY_MSI_CLIENT_ID: ${{ vars.AZCOPY_MSI_CLIENT_ID }}
       ONNXRUNTIME_TEST_GPU_DEVICE_ID: '0'
       TRTEP_LIBRARY_PATH: '${{ github.workspace }}\orttrtep\bin\ORTTensorRTEp.dll'
-      ARTIFACT_NAME: onnxruntime_provider_test.exe.${{ matrix.build_type }}.results.xml
+      ARTIFACT_NAME: orttrtep_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}.results
       BUILD_TYPE: ${{ matrix.build_type }}
       CUDA_VERSION: ${{ matrix.cuda_version }}
       TRT_VERSION: ${{ matrix.trt_version }}
@@ -363,4 +364,6 @@ jobs:
       uses: actions/upload-artifact@v7
       with:
         name: ${{ env.ARTIFACT_NAME }}
-        path: ${{ env.ARTIFACT_NAME }}
+        path: |
+            ${{ env.ARTIFACT_NAME }}.xml
+            ${{ env.ARTIFACT_NAME }}.log

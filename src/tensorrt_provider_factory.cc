@@ -146,7 +146,11 @@ OrtStatus* ORT_API_CALL TensorrtExecutionProviderFactory::GetSupportedDevicesImp
   int cuda_device_count = 0;
   cudaError_t cuda_err = cudaGetDeviceCount(&cuda_device_count);
   if (cuda_err != cudaSuccess) {
-    cuda_device_count = 0;  // no CUDA devices available
+    // CUDA API failure (e.g., driver not loaded, version mismatch) is a hard error.
+    // This is distinct from the case where CUDA works but reports zero devices.
+    std::string err_msg = std::string("cudaGetDeviceCount failed: ") + cudaGetErrorString(cuda_err) +
+                          " (" + std::to_string(static_cast<int>(cuda_err)) + ")";
+    return factory->ort_api.CreateStatus(ORT_RUNTIME_EXCEPTION, err_msg.c_str());
   }
 
   if (cuda_device_count == 0) {
@@ -454,15 +458,28 @@ EXPORT_SYMBOL OrtStatus* CreateEpFactories(const char* registration_name, const 
   int cuda_device_count = 0;
   const cudaError_t cuda_err = cudaGetDeviceCount(&cuda_device_count);
   if (cuda_err != cudaSuccess) {
-    cuda_device_count = 0;  // no CUDA devices available
+    // CUDA API failure (e.g., driver not loaded, version mismatch) is a hard error.
+    // This is distinct from the case where CUDA works but reports zero devices.
+    std::string err_msg = std::string("cudaGetDeviceCount failed: ") + cudaGetErrorString(cuda_err) +
+                          " (" + std::to_string(static_cast<int>(cuda_err)) + ")";
+    return ort_api->CreateStatus(ORT_RUNTIME_EXCEPTION, err_msg.c_str());
   }
 
-  if (cuda_device_count == 0) {
-    RETURN_IF_ERROR(ort_api->Logger_LogMessage(default_logger,
-                    OrtLoggingLevel::ORT_LOGGING_LEVEL_WARNING,
-                    "No CUDA devices found on the system."
-                    "TensorRT execution provider will still be created but will not be able to run any models.",
-                    ORT_FILE, __LINE__, __FUNCTION__));
+  try {
+    if (cuda_device_count == 0) {
+      auto* log_status = ort_api->Logger_LogMessage(default_logger, ORT_LOGGING_LEVEL_INFO,
+                                                    "No CUDA devices found on the system."
+                                                    "TensorRT execution provider will still be "
+                                                    "created but will not be able to run any models.",
+                                                    ORT_FILE, __LINE__, __FUNCTION__);
+      if (log_status) ort_api->ReleaseStatus(log_status);
+    }
+  }
+  catch (const std::exception& ex) {
+    auto* log_status = ort_api->Logger_LogMessage(default_logger, ORT_LOGGING_LEVEL_ERROR,
+                                                  ex.what(), ORT_FILE, __LINE__, __FUNCTION__);
+    if (log_status) ort_api->ReleaseStatus(log_status);
+    return ort_api->CreateStatus(ORT_EP_FAIL, ex.what());
   }
 
   // Create TRT builder placeholder if running under a test harness.

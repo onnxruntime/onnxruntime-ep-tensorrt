@@ -149,7 +149,14 @@ OrtStatus* ORT_API_CALL TensorrtExecutionProviderFactory::GetSupportedDevicesImp
     cuda_device_count = 0;  // no CUDA devices available
   }
 
-  int cuda_device_index = 0;
+  if (cuda_device_count == 0) {
+    RETURN_IF_ERROR(factory->ort_api.Logger_LogMessage(&factory->default_logger_,
+                    OrtLoggingLevel::ORT_LOGGING_LEVEL_WARNING,
+                    "No CUDA devices found on the system. No OrtEpDevice will be created and returned.",
+                    ORT_FILE, __LINE__, __FUNCTION__));
+  }
+
+  int cuda_device_index_fallback = 0;  // fallback counter when metadata lacks PCI bus ID
   for (size_t i = 0; i < num_devices && num_ep_devices < max_ep_devices; ++i) {
     const OrtHardwareDevice& device = *devices[i];
 
@@ -158,10 +165,27 @@ OrtStatus* ORT_API_CALL TensorrtExecutionProviderFactory::GetSupportedDevicesImp
       continue;
     }
 
-    // CUDA uses contiguous ordinals for CUDA-visible NVIDIA devices. Build that
-    // mapping from the filtered hardware-device list instead of relying on the
-    // ORT hardware device id, which is not guaranteed to be a CUDA ordinal.
-    int current_device_id = cuda_device_index++;
+    // Try to resolve the CUDA ordinal from pci_bus_id metadata if available.
+    // This is more reliable than counter-based ordinal assignment because it is
+    // not affected by enumeration order, CUDA_VISIBLE_DEVICES remapping, or
+    // mixed-vendor GPU configurations.
+    int current_device_id = -1;
+    const OrtKeyValuePairs* metadata = factory->ort_api_.HardwareDevice_Metadata(&device);
+    if (metadata != nullptr) {
+      const char* pci_bus_id = factory->ort_api_.GetKeyValue(metadata, "pci_bus_id");
+      if (pci_bus_id != nullptr && pci_bus_id[0] != '\0') {
+        int resolved_ordinal = -1;
+        cudaError_t err = cudaDeviceGetByPCIBusId(&resolved_ordinal, pci_bus_id);
+        if (err == cudaSuccess && resolved_ordinal >= 0 && resolved_ordinal < cuda_device_count) {
+          current_device_id = resolved_ordinal;
+        }
+      }
+    }
+
+    // Fallback: if pci_bus_id was not available, use counter-based ordinal assignment.
+    if (current_device_id < 0) {
+      current_device_id = cuda_device_index_fallback++;
+    }
 
     // Validate the assigned ordinal is within the range of CUDA-visible devices.
     // If hardware enumeration reports GPUs not visible to CUDA (e.g. due to
@@ -424,23 +448,22 @@ EXPORT_SYMBOL OrtStatus* CreateEpFactories(const char* registration_name, const 
   const OrtEpApi* ort_ep_api = ort_api->GetEpApi();
   const OrtModelEditorApi* model_editor_api = ort_api->GetModelEditorApi();
 
-  // Fail fast if CUDA device is not available.
-  int num_cuda_devices = 0;
-  const cudaError_t cuda_err = cudaGetDeviceCount(&num_cuda_devices);
-  if (cuda_err != cudaSuccess) {
-    return ort_api->CreateStatus(ORT_EP_FAIL, cudaGetErrorString(cuda_err));
-  }
-
-  if (num_cuda_devices == 0) {
-    Ort::ThrowOnError(ort_api->Logger_LogMessage(default_logger,
-                      OrtLoggingLevel::ORT_LOGGING_LEVEL_WARNING,
-                      "No CUDA devices found on the system."
-                      "TensorRT execution provider will still be created but will not be able to run any models.",
-                      ORT_FILE, __LINE__, __FUNCTION__));
-  }
-
   // Manual init for the C++ API
   Ort::InitApi(ort_api);
+
+  int cuda_device_count = 0;
+  const cudaError_t cuda_err = cudaGetDeviceCount(&cuda_device_count);
+  if (cuda_err != cudaSuccess) {
+    cuda_device_count = 0;  // no CUDA devices available
+  }
+
+  if (cuda_device_count == 0) {
+    RETURN_IF_ERROR(ort_api->Logger_LogMessage(default_logger,
+                    OrtLoggingLevel::ORT_LOGGING_LEVEL_WARNING,
+                    "No CUDA devices found on the system."
+                    "TensorRT execution provider will still be created but will not be able to run any models.",
+                    ORT_FILE, __LINE__, __FUNCTION__));
+  }
 
   // Create TRT builder placeholder if running under a test harness.
   // This prevents TensorRT from repeatedly loading/unloading internal

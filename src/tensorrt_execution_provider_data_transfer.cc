@@ -23,12 +23,9 @@ bool ORT_API_CALL TRTEpDataTransfer::CanCopyImpl(const OrtDataTransferImpl* this
   auto src_vendor_id = impl.ep_api.MemoryDevice_GetVendorId(src_memory_device);
   auto dst_vendor_id = impl.ep_api.MemoryDevice_GetVendorId(dst_memory_device);
 
-  // 0x10DE is the PCI vendor ID for NVIDIA
-  constexpr uint32_t nvidia_vendor_id = 0x10DE;
-
   // Reject if GPU device is not NVIDIA
-  if ((src_type == OrtMemoryInfoDeviceType_GPU && src_vendor_id != nvidia_vendor_id) ||
-      (dst_type == OrtMemoryInfoDeviceType_GPU && dst_vendor_id != nvidia_vendor_id)) {
+  if ((src_type == OrtMemoryInfoDeviceType_GPU && src_vendor_id != kNvidiaVendorId) ||
+      (dst_type == OrtMemoryInfoDeviceType_GPU && dst_vendor_id != kNvidiaVendorId)) {
     return false;
   }
 
@@ -110,11 +107,6 @@ OrtStatus* ORT_API_CALL TRTEpDataTransfer::CopyTensorsImpl(OrtDataTransferImpl* 
 
 /*static*/
 void ORT_API_CALL TRTEpDataTransfer::ReleaseImpl(OrtDataTransferImpl* this_ptr) noexcept {
-  // In our setup the factory owns a shared ExampleDataTransfer instance so it will do the cleanup, and we ignore
-  // the call to Release from the plugin_ep::DataTransfer dtor (see /onnxruntime/core/framework/plugin_data_transfer.h)
-  //
-  // If you create a new instance on each call to OrtEpFactory::CreateDataTransfer you call `delete` here
-  // delete static_cast<TRTEpDataTransfer*>(this_ptr);
-  ;
+  delete static_cast<TRTEpDataTransfer*>(this_ptr);
 }
 }  // namespace trt_ep

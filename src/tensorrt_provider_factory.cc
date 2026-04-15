@@ -12,6 +12,29 @@
 #include <vector>
 
 // ---------------------------------------------------------------------------
+// C API boundary guard.
+//
+// Every C API entry point (ORT_API_CALL / extern "C") that returns OrtStatus*
+// must catch all C++ exceptions before they cross the boundary — propagating
+// exceptions through a C ABI is undefined behaviour.
+//
+// Usage:
+//   OrtStatus* ORT_API_CALL SomeImpl(...) noexcept {
+//     API_IMPL_BEGIN
+//       ... body ...
+//       return nullptr;
+//     API_IMPL_END(factory->ort_api)
+//   }
+// ---------------------------------------------------------------------------
+#define API_IMPL_BEGIN try {
+#define API_IMPL_END(ort_api_ref)                                                    \
+  } catch (const std::exception& ex) {                                               \
+    return (ort_api_ref).CreateStatus(ORT_EP_FAIL, ex.what());                       \
+  } catch (...) {                                                                    \
+    return (ort_api_ref).CreateStatus(ORT_EP_FAIL, "Unknown exception in TRT EP");   \
+  }
+
+// ---------------------------------------------------------------------------
 // TensorRT builder placeholder for test scenarios.
 //
 // TensorRT loads/unloads heavy internal libraries every time all IBuilder
@@ -124,8 +147,9 @@ OrtStatus* ORT_API_CALL TensorrtExecutionProviderFactory::GetSupportedDevicesImp
     OrtEpDevice** ep_devices,
     size_t max_ep_devices,
     size_t* p_num_ep_devices) noexcept {
-  size_t& num_ep_devices = *p_num_ep_devices;
   auto* factory = static_cast<TensorrtExecutionProviderFactory*>(this_ptr);
+  API_IMPL_BEGIN
+  size_t& num_ep_devices = *p_num_ep_devices;
 
   // Clear stale ordinal mappings from any prior enumeration.
   {
@@ -281,6 +305,7 @@ OrtStatus* ORT_API_CALL TensorrtExecutionProviderFactory::GetSupportedDevicesImp
   }
 
   return nullptr;
+  API_IMPL_END(factory->ort_api)
 }
 
 OrtStatus* ORT_API_CALL TensorrtExecutionProviderFactory::CreateEpImpl(
@@ -292,6 +317,7 @@ OrtStatus* ORT_API_CALL TensorrtExecutionProviderFactory::CreateEpImpl(
     _In_ const OrtLogger* logger, _Out_ OrtEp** ep) noexcept {
   auto* factory = static_cast<TensorrtExecutionProviderFactory*>(this_ptr);
   *ep = nullptr;
+  API_IMPL_BEGIN
 
   if (num_devices != 1) {
     // we only registered for GPU and only expected to be selected for one GPU
@@ -314,11 +340,29 @@ OrtStatus* ORT_API_CALL TensorrtExecutionProviderFactory::CreateEpImpl(
 
   *ep = trt_ep.release();
   return nullptr;
+  API_IMPL_END(factory->ort_api)
 }
 
-void ORT_API_CALL TensorrtExecutionProviderFactory::ReleaseEpImpl(OrtEpFactory* /*this_ptr*/, OrtEp* ep) noexcept {
-  TensorrtExecutionProvider* trt_ep = static_cast<TensorrtExecutionProvider*>(ep);
-  delete trt_ep;
+void ORT_API_CALL TensorrtExecutionProviderFactory::ReleaseEpImpl(OrtEpFactory* this_ptr, OrtEp* ep) noexcept {
+  try {
+    TensorrtExecutionProvider* trt_ep = static_cast<TensorrtExecutionProvider*>(ep);
+    delete trt_ep;
+  } catch (const std::exception& ex) {
+    // void return — cannot report via OrtStatus*. Log so teardown failures are diagnosable.
+    auto* factory = static_cast<TensorrtExecutionProviderFactory*>(this_ptr);
+    auto* log_status = factory->ort_api.Logger_LogMessage(&factory->default_logger_,
+                                                          OrtLoggingLevel::ORT_LOGGING_LEVEL_ERROR,
+                                                          (std::string("Exception in ReleaseEpImpl: ") + ex.what()).c_str(),
+                                                          ORT_FILE, __LINE__, __FUNCTION__);
+    if (log_status) factory->ort_api.ReleaseStatus(log_status);
+  } catch (...) {
+    auto* factory = static_cast<TensorrtExecutionProviderFactory*>(this_ptr);
+    auto* log_status = factory->ort_api.Logger_LogMessage(&factory->default_logger_,
+                                                          OrtLoggingLevel::ORT_LOGGING_LEVEL_ERROR,
+                                                          "Unknown exception in ReleaseEpImpl",
+                                                          ORT_FILE, __LINE__, __FUNCTION__);
+    if (log_status) factory->ort_api.ReleaseStatus(log_status);
+  }
 }
 
 OrtStatus* ORT_API_CALL TensorrtExecutionProviderFactory::CreateAllocatorImpl(OrtEpFactory* this_ptr,
@@ -326,6 +370,7 @@ OrtStatus* ORT_API_CALL TensorrtExecutionProviderFactory::CreateAllocatorImpl(Or
                                                                               const OrtKeyValuePairs* /*allocator_options*/,
                                                                               OrtAllocator** allocator) noexcept {
   auto& factory = *static_cast<TensorrtExecutionProviderFactory*>(this_ptr);
+  API_IMPL_BEGIN
 
   // NOTE: The factory implementation is free to return a shared OrtAllocator* instance instead of creating a new
   //       allocator on each call. To do this have an allocator instance as an OrtEpFactory class member and make
@@ -372,6 +417,7 @@ OrtStatus* ORT_API_CALL TensorrtExecutionProviderFactory::CreateAllocatorImpl(Or
   }
 
   return nullptr;
+  API_IMPL_END(factory.ort_api)
 }
 
 void ORT_API_CALL TensorrtExecutionProviderFactory::ReleaseAllocatorImpl(OrtEpFactory* /*this*/,
@@ -384,11 +430,13 @@ OrtStatus* ORT_API_CALL TensorrtExecutionProviderFactory::CreateDataTransferImpl
     OrtEpFactory* this_ptr,
     OrtDataTransferImpl** data_transfer) noexcept {
   auto& factory = *static_cast<TensorrtExecutionProviderFactory*>(this_ptr);
+  API_IMPL_BEGIN
 
   auto data_transfer_impl = std::make_unique<TRTEpDataTransfer>(static_cast<const ApiPtrs&>(factory));
   *data_transfer = data_transfer_impl.release();
 
   return nullptr;
+  API_IMPL_END(factory.ort_api)
 }
 
 bool ORT_API_CALL TensorrtExecutionProviderFactory::IsStreamAwareImpl(const OrtEpFactory* /*this_ptr*/) noexcept {
@@ -501,18 +549,32 @@ EXPORT_SYMBOL OrtStatus* CreateEpFactories(const char* registration_name, const 
 }
 
 EXPORT_SYMBOL OrtStatus* ReleaseEpFactory(OrtEpFactory* factory) {
+  const OrtApi* ort_api = nullptr;
+
   try {
-    delete static_cast<trt_ep::TensorrtExecutionProviderFactory*>(factory);
+    // Grab the OrtApi reference before destroying the factory, so we can
+    // use it to create an error status if the catch block is reached.
+    auto* trt_factory = static_cast<trt_ep::TensorrtExecutionProviderFactory*>(factory);
+    ort_api = &trt_factory->ort_api;
+
+    delete trt_factory;
 
     // Release the placeholder builder when the last factory is torn down.
     DestroyBuilderPlaceholder();
-  } catch (const std::exception& ex) {
-    // Best-effort: ReleaseEpFactory shouldn't normally throw, but guard the C boundary.
-    (void)ex;
-  } catch (...) {
-  }
 
-  return nullptr;
+    return nullptr;
+  } catch (const std::exception& ex) {
+    if (ort_api != nullptr) {
+      return ort_api->CreateStatus(ORT_EP_FAIL, ex.what());
+    }
+    // ort_api not yet captured — nothing we can do except not crash.
+    return nullptr;
+  } catch (...) {
+    if (ort_api != nullptr) {
+      return ort_api->CreateStatus(ORT_EP_FAIL, "Unknown exception in ReleaseEpFactory");
+    }
+    return nullptr;
+  }
 }
 
 }  // extern "C"

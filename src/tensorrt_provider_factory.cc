@@ -455,17 +455,17 @@ EXPORT_SYMBOL OrtStatus* CreateEpFactories(const char* registration_name, const 
   // Manual init for the C++ API
   Ort::InitApi(ort_api);
 
-  int cuda_device_count = 0;
-  const cudaError_t cuda_err = cudaGetDeviceCount(&cuda_device_count);
-  if (cuda_err != cudaSuccess) {
-    // CUDA API failure (e.g., driver not loaded, version mismatch) is a hard error.
-    // This is distinct from the case where CUDA works but reports zero devices.
-    std::string err_msg = std::string("cudaGetDeviceCount failed: ") + cudaGetErrorString(cuda_err) +
-                          " (" + std::to_string(static_cast<int>(cuda_err)) + ")";
-    return ort_api->CreateStatus(ORT_RUNTIME_EXCEPTION, err_msg.c_str());
-  }
-
   try {
+    int cuda_device_count = 0;
+    const cudaError_t cuda_err = cudaGetDeviceCount(&cuda_device_count);
+    if (cuda_err != cudaSuccess) {
+      // CUDA API failure (e.g., driver not loaded, version mismatch) is a hard error.
+      // This is distinct from the case where CUDA works but reports zero devices.
+      std::string err_msg = std::string("cudaGetDeviceCount failed: ") + cudaGetErrorString(cuda_err) +
+                            " (" + std::to_string(static_cast<int>(cuda_err)) + ")";
+      return ort_api->CreateStatus(ORT_RUNTIME_EXCEPTION, err_msg.c_str());
+    }
+
     if (cuda_device_count == 0) {
       auto* log_status = ort_api->Logger_LogMessage(default_logger, ORT_LOGGING_LEVEL_INFO,
                                                     "No CUDA devices found on the system."
@@ -474,38 +474,43 @@ EXPORT_SYMBOL OrtStatus* CreateEpFactories(const char* registration_name, const 
                                                     ORT_FILE, __LINE__, __FUNCTION__);
       if (log_status) ort_api->ReleaseStatus(log_status);
     }
-  }
-  catch (const std::exception& ex) {
-    auto* log_status = ort_api->Logger_LogMessage(default_logger, ORT_LOGGING_LEVEL_ERROR,
-                                                  ex.what(), ORT_FILE, __LINE__, __FUNCTION__);
-    if (log_status) ort_api->ReleaseStatus(log_status);
+
+    // Create TRT builder placeholder if running under a test harness.
+    // This prevents TensorRT from repeatedly loading/unloading internal
+    // libraries as EP instances are created and destroyed across tests.
+    MaybeCreateBuilderPlaceholder();
+
+    // Factory could use registration_name or define its own EP name.
+    std::unique_ptr<OrtEpFactory> factory = std::make_unique<trt_ep::TensorrtExecutionProviderFactory>(
+        registration_name, *default_logger, ApiPtrs{*ort_api, *ort_ep_api, *model_editor_api});
+
+    if (max_factories < 1) {
+      return ort_api->CreateStatus(ORT_INVALID_ARGUMENT,
+                                   "Not enough space to return EP factory. Need at least one.");
+    }
+
+    factories[0] = factory.release();
+    *num_factories = 1;
+
+    return nullptr;
+  } catch (const std::exception& ex) {
     return ort_api->CreateStatus(ORT_EP_FAIL, ex.what());
+  } catch (...) {
+    return ort_api->CreateStatus(ORT_EP_FAIL, "Unknown exception in CreateEpFactories");
   }
-
-  // Create TRT builder placeholder if running under a test harness.
-  // This prevents TensorRT from repeatedly loading/unloading internal
-  // libraries as EP instances are created and destroyed across tests.
-  MaybeCreateBuilderPlaceholder();
-
-  // Factory could use registration_name or define its own EP name.
-  std::unique_ptr<OrtEpFactory> factory = std::make_unique<trt_ep::TensorrtExecutionProviderFactory>(registration_name, *default_logger, ApiPtrs{*ort_api, *ort_ep_api, *model_editor_api});
-
-  if (max_factories < 1) {
-    return ort_api->CreateStatus(ORT_INVALID_ARGUMENT,
-                                 "Not enough space to return EP factory. Need at least one.");
-  }
-
-  factories[0] = factory.release();
-  *num_factories = 1;
-
-  return nullptr;
 }
 
 EXPORT_SYMBOL OrtStatus* ReleaseEpFactory(OrtEpFactory* factory) {
-  delete static_cast<trt_ep::TensorrtExecutionProviderFactory*>(factory);
+  try {
+    delete static_cast<trt_ep::TensorrtExecutionProviderFactory*>(factory);
 
-  // Release the placeholder builder when the last factory is torn down.
-  DestroyBuilderPlaceholder();
+    // Release the placeholder builder when the last factory is torn down.
+    DestroyBuilderPlaceholder();
+  } catch (const std::exception& ex) {
+    // Best-effort: ReleaseEpFactory shouldn't normally throw, but guard the C boundary.
+    (void)ex;
+  } catch (...) {
+  }
 
   return nullptr;
 }

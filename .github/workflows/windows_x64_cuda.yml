@@ -148,7 +148,7 @@ jobs:
       uses: actions/checkout@v6
       with:
         repository: microsoft/onnxruntime
-        ref: 'v1.24.4'
+        ref: 'rel-1.25.0'
         token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Install Ninja
@@ -175,31 +175,6 @@ jobs:
         azcopy.exe cp --recursive "https://lotusscus.blob.core.windows.net/models/cuda_sdk/v${env:CUDA_VERSION}" "${env:RUNNER_TEMP}"
         Get-ChildItem -Path "${env:RUNNER_TEMP}"
         Get-ChildItem -Path "${env:RUNNER_TEMP}\v${env:CUDA_VERSION}" -Recurse
-
-    - name: Download TensorRT-${{ matrix.trt_version }}.Windows.win10.cuda-${{ matrix.cuda_version }}
-      shell: pwsh
-      run: |
-        azcopy.exe cp --recursive "https://lotusscus.blob.core.windows.net/models/local/TensorRT-${env:TRT_VERSION}.Windows.win10.cuda-${env:CUDA_VERSION}" "${env:RUNNER_TEMP}"
-        Get-ChildItem -Path "${env:RUNNER_TEMP}"
-        Get-ChildItem -Path "${env:RUNNER_TEMP}\TensorRT-${env:TRT_VERSION}.Windows.win10.cuda-${env:CUDA_VERSION}" -Recurse
-
-    - name: Setup Nuget
-      uses: nuget/setup-nuget@v2
-      with:
-        nuget-version: '6.x'
-
-    - name: NuGet restore
-      shell: cmd
-      run: |
-        nuget restore ${{ github.workspace }}\packages.config ^
-          -ConfigFile ${{ github.workspace }}\NuGet.config ^
-          -PackagesDirectory ${{ runner.temp }}\build\${{ matrix.build_type }}
-
-    - name: Set OnnxRuntimeBuildDirectory
-      shell: pwsh
-      run: |
-        $buildDir = Join-Path ${env:RUNNER_TEMP} "build"
-        echo "OnnxRuntimeBuildDirectory=$buildDir" >> $env:GITHUB_ENV
 
     - name: Locate vcvarsall and Setup Env
       uses: ./.github/actions/locate-vcvarsall-and-setup-env
@@ -232,11 +207,6 @@ jobs:
           --build_shared_lib `
           --use_binskim_compliant_compile_flags `
           --disable_memleak_checker `
-          --enable_onnx_tests `
-          --cuda_home=${env:RUNNER_TEMP}\v${env:CUDA_VERSION} `
-          --cmake_extra_defines CMAKE_CUDA_ARCHITECTURES=${env:CMAKE_CUDA_ARCHITECTURES} CMAKE_CUDA_COMPILER=${env:RUNNER_TEMP}\v${env:CUDA_VERSION}\bin\nvcc.exe `
-          --use_tensorrt `
-          --tensorrt_home=${env:RUNNER_TEMP}\TensorRT-${env:TRT_VERSION}.Windows.win10.cuda-${env:CUDA_VERSION} `
           --target onnxruntime_provider_test
         if ($lastExitCode -ne 0) {
           exit $lastExitCode
@@ -343,6 +313,7 @@ jobs:
       shell: pwsh
       env:
         ORT_UNIT_TEST_MAIN_LOG_LEVEL: 0
+        ORT_TRT_EP_ENABLE_BUILDER_PLACEHOLDER: 1
         ORT_UNIT_TEST_MAIN_DYNAMIC_PLUGIN_EP_CONFIG_JSON: |
           {
             "ep_library_registration_name": "NvTensorRtRtx",

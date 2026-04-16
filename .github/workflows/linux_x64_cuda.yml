@@ -238,8 +238,8 @@ jobs:
         
         # Execute the build process
         python $GITHUB_WORKSPACE/tools/ci_build/build.py \
-          --update \
           --build \
+          --update \
           --config ${{ matrix.config.build_type }} \
           --build_dir build \
           --use_cache \

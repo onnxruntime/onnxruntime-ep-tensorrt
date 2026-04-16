@@ -205,7 +205,6 @@ jobs:
           --parallel `
           --cmake_generator "Ninja" `
           --build_shared_lib `
-          --use_binskim_compliant_compile_flags `
           --disable_memleak_checker `
           --target onnxruntime_provider_test
         if ($lastExitCode -ne 0) {

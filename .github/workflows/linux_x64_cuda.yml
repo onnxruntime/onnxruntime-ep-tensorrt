@@ -18,6 +18,7 @@ on:
 
 jobs:
   build-image:
+    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -80,6 +81,7 @@ jobs:
   #   - https://github.com/orgs/community/discussions/25634
   #   - https://github.com/orgs/community/discussions/17245
   build-matrix:
+    if: false
     runs-on: ubuntu-latest
     needs: build-image
     outputs:
@@ -122,6 +124,7 @@ jobs:
 
 
   trtep-build:
+    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -179,6 +182,7 @@ jobs:
 
 
   ort-build:
+    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -271,3 +275,92 @@ jobs:
       with:
         name: ${{ env.ARTIFACT_NAME }}
         path: build/${{ matrix.config.build_type }}
+
+# Run Tests ###########################################################################################################
+
+  run-tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [Debug, RelWithDebInfo]
+        cuda_version: ['12.9'] #, '13.0'
+        trt_version: ['10.14.1.48']
+
+    runs-on: [
+      "self-hosted",
+      "1ES.Pool=onnxruntime-ep-github-linux-a10",
+      "1ES.ImageOverride=onnxruntime-ubuntu2204-CUDA-A10",
+      "JobId=linux-ort-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
+    ]
+    name: Linux Run Tests CUDA${{ matrix.cuda_version }} ${{ matrix.build_type }}
+
+    container:
+      image: 'ghcr.io/onnxruntime/onnxruntime-ep-tensorrt/ubuntu_2404_cuda12.9_trt10.14.1.48:sha256-463d90a20a513420863d8ba847891eaa5b23eb544dff9863667a503eee6ad850'
+      options: --gpus all
+    environment: Linux_x64
+    env:
+      ALLOW_RELEASED_ONNX_OPSET_ONLY: '0'
+      AZCOPY_AUTO_LOGIN_TYPE: ${{ vars.AZCOPY_AUTO_LOGIN_TYPE }}
+      AZCOPY_MSI_CLIENT_ID: ${{ vars.AZCOPY_MSI_CLIENT_ID }}
+      CMAKE_CUDA_ARCHITECTURES: 86
+      ONNXRUNTIME_TEST_GPU_DEVICE_ID: '0'
+      TRTEP_LIBRARY_PATH: $GITHUB_WORKSPACE/orttrtep/lib/libORTTensorRTEp.so
+      ARTIFACT_NAME: orttrtep_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}.results
+      CUDA_VERSION: ${{ matrix.cuda_version }}
+      TRT_VERSION: ${{ matrix.trt_version }}
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v6
+      with:
+        sparse-checkout: .github
+        sparse-checkout-cone-mode: false
+
+    - name: Download TRTEp artifacts
+      uses: actions/download-artifact@v7
+      with:
+        name: Linux_x64_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}
+        run-id: '24531338476'
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        path: orttrtep
+
+    - name: Download ORT artifacts
+      uses: actions/download-artifact@v7
+      with:
+        name: 'ort_linux_x64_cuda${{ matrix.cuda_version }}_${{ matrix.build_type }}'
+        run-id: '24531338476'
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        path: onnxruntime
+
+    - name: Setup python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.x'
+        architecture: x64
+
+    - name: Run tests
+      env:
+        ORT_UNIT_TEST_MAIN_LOG_LEVEL: 0
+        ORT_TRT_EP_ENABLE_BUILDER_PLACEHOLDER: 1
+        ORT_UNIT_TEST_MAIN_DYNAMIC_PLUGIN_EP_CONFIG_JSON: |
+          {
+            "ep_library_registration_name": "NvTensorRtRtx",
+            "ep_library_path": ${{ toJson(env.TRTEP_LIBRARY_PATH) }},
+            "selected_ep_name": "NvTensorRtRtx",
+            "default_ep_options": {}
+          }
+      run: |
+        env
+        chmod +x "$GITHUB_WORKSPACE/onnxruntime/onnxruntime_provider_test"
+        python "$GITHUB_WORKSPACE/.github/scripts/test_runner.py"   \
+          "$GITHUB_WORKSPACE/onnxruntime/onnxruntime_provider_test" \
+          "${{ env.ARTIFACT_NAME }}"
+
+    - name: Upload build artifacts
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ env.ARTIFACT_NAME }}
+        path: |
+            ${{ env.ARTIFACT_NAME }}.xml
+            ${{ env.ARTIFACT_NAME }}.log

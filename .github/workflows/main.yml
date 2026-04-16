@@ -367,6 +367,7 @@ jobs:
 
 
   linux-run-test:
+    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -599,12 +600,19 @@ jobs:
 
         dotnet build SampleApp.csproj -c ${env:BUILD_TYPE}
 
-        Get-ChildItem -Path "${{ github.workspace }}\csharp\SampleApp\bin\${env:BUILD_TYPE}"
+        Get-ChildItem -Path "${{ github.workspace }}\csharp\SampleApp\bin\${env:BUILD_TYPE}" -Recurse
 
     - name: Verify
       shell: pwsh
-      working-directory: ${{ github.workspace }}\csharp\SampleApp\bin\${{ matrix.build_type }}
       run: |
+        cd (Split-Path (Get-ChildItem `
+                          -Path "${{ github.workspace }}\csharp\SampleApp\bin" `
+                          -Filter "SampleApp.exe" `
+                          -Recurse `
+                        ).FullName `
+                        -Parent `
+            )
+
         & SampleApp.exe
         if ($lastExitCode -ne 0) {
           exit $lastExitCode

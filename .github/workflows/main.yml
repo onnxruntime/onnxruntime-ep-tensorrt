@@ -434,21 +434,9 @@ jobs:
         def get_driver_version():
             try:
                 output = subprocess.check_output(["nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader"]).decode()
-                return float(output.strip())
+                return int(output.split(".", 2)[0].strip())
             except subprocess.CalledProcessError:
                 return None
-
-        path1 = Path(r'/usr/local/nvidia')
-        if path1.exists():
-            print([_ for _ in path1.rglob('nvidia-smi')])
-        else:
-            print(f"Can't find nvidia-smi in {path1}")
-
-        path2 = Path(r'/usr/local/cuda')
-        if path2.exists():
-            print([_ for _ in path2.rglob('nvidia-smi')])
-        else:
-            print(f"Can't find nvidia-smi in {path2}")
 
         cuda_version = get_cuda_version()
         driver_version = get_driver_version()

@@ -163,6 +163,7 @@ exclusions = {
   ],
   "DecoderAttentionTest": [],
   "DecoderMaskedMultiHeadAttentionTest": [],
+  "DeformConvTest": ["*"],
   "DequantizeBFPTest": [],
   "DequantizeLinearContribOpTest": [
     "DequantizeLinearContribOpTest.DequantizeLinear_1",

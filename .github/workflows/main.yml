@@ -418,7 +418,7 @@ jobs:
               python3-setuptools \
               python3-venv \
               python3-wheel \
-          && rm -rf /var/lib/apt/lists/*
+          && sudo rm -rf /var/lib/apt/lists/*
         sudo apt-get update && \
             sudo apt-get install -y --no-install-recommends \
             libnvinfer-dev=${TRT_VERSION} \
@@ -439,7 +439,7 @@ jobs:
             libnvinfer-bin=${TRT_VERSION} \
             libnvinfer-headers-python-plugin-dev=${TRT_VERSION} \
             libnvinfer-win-builder-resource10=${TRT_VERSION} && \
-            rm -rf /var/lib/apt/lists/*
+            sudo rm -rf /var/lib/apt/lists/*
 
     - name: Setup python
       uses: actions/setup-python@v6

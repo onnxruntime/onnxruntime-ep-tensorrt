@@ -382,7 +382,7 @@ jobs:
     ]
     name: Linux Run Tests CUDA${{ matrix.cuda_version }} ${{ matrix.build_type }}
 
-    # container: 'ghcr.io/onnxruntime/onnxruntime-ep-tensorrt/ubuntu_2404_cuda12.9_trt10.14.1.48:sha256-463d90a20a513420863d8ba847891eaa5b23eb544dff9863667a503eee6ad850'
+    container: 'ghcr.io/onnxruntime/onnxruntime-ep-tensorrt/ubuntu_2404_cuda12.9_trt10.14.1.48:sha256-463d90a20a513420863d8ba847891eaa5b23eb544dff9863667a503eee6ad850'
     # container: 'ghcr.io/onnxruntime/onnxruntime-ep-tensorrt/ubuntu_2404_cuda13.0_trt10.14.1.48:sha256-89dd6a87dc78bad59738659ca17a5d35c5413869fa27467601f54c99a565fc5f'
     # container: 'ghcr.io/onnxruntime/onnxruntime-ep-tensorrt/ubuntu_2404_cuda12.8_trt10.14.1.48:sha256-04d5f773a286729256933fe1e70d067a645d5946c41f7bbd177e2008b8435c23'
     environment: Linux_x64
@@ -398,54 +398,15 @@ jobs:
       TRT_VERSION: ${{ matrix.trt_version }}
 
     steps:
-    - name: Setup environemnt
-      run: |
-        sudo apt-get update && \
-          sudo apt-get install -y --no-install-recommends \
-              git \
-              bash \
-              wget \
-              diffutils \
-              g++-13 \
-              build-essential \
-              cmake \
-              ccache \
-              ninja-build \
-              python3 \
-              python3-dev \
-              python3-pip \
-              python3-numpy \
-              python3-setuptools \
-              python3-venv \
-              python3-wheel \
-          && sudo rm -rf /var/lib/apt/lists/*
-        sudo apt-get update && \
-            sudo apt-get install -y --no-install-recommends \
-            libnvinfer-dev=${TRT_VERSION} \
-            libnvinfer-dispatch-dev=${TRT_VERSION} \
-            libnvinfer-dispatch10=${TRT_VERSION} \
-            libnvinfer-headers-dev=${TRT_VERSION} \
-            libnvinfer-headers-plugin-dev=${TRT_VERSION} \
-            libnvinfer-lean-dev=${TRT_VERSION} \
-            libnvinfer-lean10=${TRT_VERSION} \
-            libnvinfer-plugin-dev=${TRT_VERSION} \
-            libnvinfer-plugin10=${TRT_VERSION} \
-            libnvinfer-vc-plugin-dev=${TRT_VERSION} \
-            libnvinfer-vc-plugin10=${TRT_VERSION} \
-            libnvinfer10=${TRT_VERSION} \
-            libnvonnxparsers-dev=${TRT_VERSION} \
-            libnvonnxparsers10=${TRT_VERSION} \
-            tensorrt-dev=${TRT_VERSION} \
-            libnvinfer-bin=${TRT_VERSION} \
-            libnvinfer-headers-python-plugin-dev=${TRT_VERSION} \
-            libnvinfer-win-builder-resource10=${TRT_VERSION} && \
-            sudo rm -rf /var/lib/apt/lists/*
-
     - name: Setup python
       uses: actions/setup-python@v6
       with:
         python-version: '3.x'
         architecture: x64
+
+    - name: Setup tmate session
+      uses: mxschmitt/action-tmate@v3
+      timeout-minutes: 60
 
     - name: Check cuda compatibility
       shell: python
@@ -531,11 +492,6 @@ jobs:
     - name: List workspace files
       run: |
         echo "TRTEP_LIBRARY_PATH=$GITHUB_WORKSPACE/orttrtep/lib/libORTTensorRTEp.so" >> $GITHUB_ENV
-
-    - name: Setup tmate session
-      if: false
-      uses: mxschmitt/action-tmate@v3
-      timeout-minutes: 60
 
     - name: Run tests
       env:

@@ -1,4 +1,4 @@
-LIBRARY "TensorRTEp.dll"
+LIBRARY "ORTTensorRTEp.dll"
 EXPORTS
  CreateEpFactories @1
  ReleaseEpFactory @2

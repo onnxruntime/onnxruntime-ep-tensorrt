@@ -107,11 +107,6 @@ OrtStatus* ORT_API_CALL TRTEpDataTransfer::CopyTensorsImpl(OrtDataTransferImpl* 
 
 /*static*/
 void ORT_API_CALL TRTEpDataTransfer::ReleaseImpl(OrtDataTransferImpl* this_ptr) noexcept {
-  // In our setup the factory owns a shared ExampleDataTransfer instance so it will do the cleanup, and we ignore
-  // the call to Release from the plugin_ep::DataTransfer dtor (see /onnxruntime/core/framework/plugin_data_transfer.h)
-  //
-  // If you create a new instance on each call to OrtEpFactory::CreateDataTransfer you call `delete` here
-  // delete static_cast<TRTEpDataTransfer*>(this_ptr);
-  ;
+  delete static_cast<TRTEpDataTransfer*>(this_ptr);
 }
 }  // namespace trt_ep

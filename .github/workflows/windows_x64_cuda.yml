@@ -391,6 +391,8 @@ jobs:
       with:
         name: Windows_x64_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}
         path: orttrtep
+        run-id: '24532319087'
+        github-token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Build Nuget Package
       shell: pwsh

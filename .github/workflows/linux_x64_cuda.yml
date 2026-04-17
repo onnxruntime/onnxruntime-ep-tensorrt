@@ -152,6 +152,7 @@ jobs:
       ARTIFACT_NAME: Linux_x64_cuda${{ matrix.config.cuda_version }}_trt${{ matrix.config.trt_version }}_${{ matrix.config.build_type }}
     permissions:
       contents: read
+      packages: read
 
     steps:
     - name: Checkout Code
@@ -216,6 +217,7 @@ jobs:
       ONNXRUNTIME_TEST_GPU_DEVICE_ID: '0'
     permissions:
       contents: read
+      packages: read
 
     steps:
     - name: Checkout Code
@@ -322,6 +324,7 @@ jobs:
       TRT_VERSION: ${{ matrix.trt_version }}
     permissions:
       contents: read
+      packages: read
 
     steps:
     - name: Checkout Code
@@ -440,16 +443,13 @@ jobs:
         path: orttrtep
 
     - name: Build Nuget Package
-      shell: pwsh
       run: |
-        $SourceDir = ".\orttrtep\bin"
-        $TargetDir = ".\csharp\Microsoft.ML.OnnxRuntime.EP.TensorRT\runtimes\win-x64\native"
-        $null = New-Item -Type Directory -Force $TargetDir
-        Move-Item "$SourceDir\ORTTensorRTEp.dll" -Destination $TargetDir
-        Move-Item "$SourceDir\ORTTensorRTEp.pdb" -Destination $TargetDir
+        TargetDir="./csharp/Microsoft.ML.OnnxRuntime.EP.TensorRT/runtimes/linux-x64/native"
+        mkdir -p $TargetDir
+        mv orttrtep/lib/libORTTensorRTEp.so $TargetDir
 
-        Get-ChildItem -Path "$TargetDir"
-        cd csharp\Microsoft.ML.OnnxRuntime.EP.TensorRT
+        ls -lR $TargetDir
+        cd csharp/Microsoft.ML.OnnxRuntime.EP.TensorRT
 
         dotnet pack Microsoft.ML.OnnxRuntime.EP.TensorRT.csproj -c ${env:BUILD_TYPE}
 

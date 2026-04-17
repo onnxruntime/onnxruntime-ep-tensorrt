@@ -451,7 +451,7 @@ jobs:
         ls -lR $TargetDir
         cd csharp/Microsoft.ML.OnnxRuntime.EP.TensorRT
 
-        dotnet pack Microsoft.ML.OnnxRuntime.EP.TensorRT.csproj -c ${env:BUILD_TYPE}
+        dotnet pack Microsoft.ML.OnnxRuntime.EP.TensorRT.csproj -c ${{ matrix.build_type }}
 
     - name: Upload build artifacts
       if: ${{ !cancelled() }}

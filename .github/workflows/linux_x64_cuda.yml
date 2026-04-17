@@ -410,6 +410,7 @@ jobs:
       TRT_VERSION: ${{ matrix.trt_version }}
     permissions:
       contents: read
+      packages: read
 
     steps:
     # - name: Setup .NET SDK

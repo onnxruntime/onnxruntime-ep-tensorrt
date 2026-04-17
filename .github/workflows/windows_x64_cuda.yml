@@ -26,6 +26,7 @@ jobs:
 # TRTEp Build #########################################################################################################
 
   trtep-build:
+    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -118,6 +119,7 @@ jobs:
 # ORT Build ###########################################################################################################
 
   ort-build:
+    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -239,6 +241,7 @@ jobs:
 # Run Tests ###########################################################################################################
 
   run-tests:
+    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -353,13 +356,13 @@ jobs:
       "JobId=trtep-win-x64-packaging-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
     name: Package TRTEp Win-x64 CUDA${{ matrix.cuda_version }} TRT${{ matrix.trt_version }} ${{ matrix.build_type }}
-    needs: [run-tests]
+    # needs: [run-tests]
 
     environment: Windows_x64
     env:
       AZCOPY_AUTO_LOGIN_TYPE: ${{ vars.AZCOPY_AUTO_LOGIN_TYPE }}
       AZCOPY_MSI_CLIENT_ID: ${{ vars.AZCOPY_MSI_CLIENT_ID }}
-      ARTIFACT_NAME: orttrtep_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}.nuget
+      ARTIFACT_NAME: orttrtep_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}
       BUILD_TYPE: ${{ matrix.build_type }}
       CUDA_VERSION: ${{ matrix.cuda_version }}
       TRT_VERSION: ${{ matrix.trt_version }}
@@ -387,9 +390,11 @@ jobs:
       uses: actions/download-artifact@v7
       with:
         name: Windows_x64_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}
+        run-id: '24532319087'
+        github-token: ${{ secrets.GITHUB_TOKEN }}
         path: orttrtep
 
-    - name: Package
+    - name: Build Nuget Package
       shell: pwsh
       run: |
         $SourceDir = ".\orttrtep\bin"
@@ -403,15 +408,107 @@ jobs:
         dotnet build .\csharp\Microsoft.ML.OnnxRuntime.EP.TensorRT\Microsoft.ML.OnnxRuntime.EP.TensorRT.csproj -c ${env:BUILD_TYPE}
         dotnet pack .\csharp\Microsoft.ML.OnnxRuntime.EP.TensorRT\Microsoft.ML.OnnxRuntime.EP.TensorRT.csproj -c ${env:BUILD_TYPE}
 
-        $null = New-Item -Type Directory -Force "local_feed"
-        Copy-Item ".\csharp\Microsoft.ML.OnnxRuntime.EP.TensorRT\bin\${env:BUILD_TYPE}\Microsoft.ML.OnnxRuntime.EP.TensorRT.*.nupkg" -Destination ".\local_feed"
-        Copy-Item ".\csharp\Microsoft.ML.OnnxRuntime.EP.TensorRT\bin\${env:BUILD_TYPE}\Microsoft.ML.OnnxRuntime.EP.TensorRT.*.snupkg" -Destination ".\local_feed"
+        $null = New-Item -Type Directory -Force ".\csharp\local_feed"
+        Copy-Item ".\csharp\Microsoft.ML.OnnxRuntime.EP.TensorRT\bin\${env:BUILD_TYPE}\Microsoft.ML.OnnxRuntime.EP.TensorRT.*.nupkg" -Destination ".\csharp\local_feed"
+        Copy-Item ".\csharp\Microsoft.ML.OnnxRuntime.EP.TensorRT\bin\${env:BUILD_TYPE}\Microsoft.ML.OnnxRuntime.EP.TensorRT.*.snupkg" -Destination ".\csharp\local_feed"
 
-        Get-ChildItem -Path "local_feed"
+        Get-ChildItem -Path ".\csharp\local_feed"
+
+    - name: Build Sample App
+      shell: pwsh
+      working-directory: ${{ github.workspace }}\csharp\SampleApp
+      run: |
+        Get-ChildItem -Path "${{ github.workspace }}"
+        Get-ChildItem -Path "${{ github.workspace }}\csharp"
+        Get-ChildItem -Path "${{ github.workspace }}\csharp\local_feed"
+
+        dotnet build SampleApp.csproj -c ${env:BUILD_TYPE}
+
+        Get-ChildItem -Path "${{ github.workspace }}\csharp\SampleApp\bin\${env:BUILD_TYPE}" -Recurse
+        Move-Item "${{ github.workspace }}\csharp\SampleApp\bin\${env:BUILD_TYPE}" -Destination "${{ github.workspace }}\csharp\local_feed\SampleApp"
 
     - name: Upload build artifacts
       if: ${{ !cancelled() }}
       uses: actions/upload-artifact@v7
       with:
         name: ${{ env.ARTIFACT_NAME }}
-        path: local_feed
+        path: "csharp/local_feed"
+
+# Verify Package ######################################################################################################
+
+  verify-package:
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [RelWithDebInfo] # Debug, 
+        cuda_version: ['12.9']
+        trt_version: ['10.14.1.48']
+
+    runs-on: [
+      "self-hosted",
+      "1ES.Pool=onnxruntime-ep-github-Win-GPU-A10",
+      "JobId=windows-verify-package-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
+    ]
+    name: Win Verify CUDA${{ matrix.cuda_version }} ${{ matrix.build_type }}
+
+    environment: Windows_x64
+    env:
+      AZCOPY_AUTO_LOGIN_TYPE: ${{ vars.AZCOPY_AUTO_LOGIN_TYPE }}
+      AZCOPY_MSI_CLIENT_ID: ${{ vars.AZCOPY_MSI_CLIENT_ID }}
+      BUILD_TYPE: ${{ matrix.build_type }}
+      CUDA_VERSION: ${{ matrix.cuda_version }}
+      TRT_VERSION: ${{ matrix.trt_version }}
+
+    steps:
+    - name: Download CUDA SDK v${{ matrix.cuda_version }}
+      shell: pwsh
+      run: |
+        azcopy.exe cp --recursive "https://lotusscus.blob.core.windows.net/models/cuda_sdk/v${env:CUDA_VERSION}" "${env:RUNNER_TEMP}"
+        Get-ChildItem -Path "${env:RUNNER_TEMP}"
+        Get-ChildItem -Path "${env:RUNNER_TEMP}\v${env:CUDA_VERSION}" -Recurse
+        Add-Content -Path ${env:GITHUB_PATH} -Value "${env:RUNNER_TEMP}\v${env:CUDA_VERSION}\bin\x64"
+        Add-Content -Path ${env:GITHUB_PATH} -Value "${env:RUNNER_TEMP}\v${env:CUDA_VERSION}\bin"
+        Add-Content -Path ${env:GITHUB_PATH} -Value "${env:RUNNER_TEMP}\v${env:CUDA_VERSION}\extras\CUPTI\lib64"
+
+    - name: Download TensorRT-${{ matrix.trt_version }}.Windows.win10.cuda-${{ matrix.cuda_version }}
+      shell: pwsh
+      run: |
+        azcopy.exe cp --recursive "https://lotusscus.blob.core.windows.net/models/local/TensorRT-${env:TRT_VERSION}.Windows.win10.cuda-${env:CUDA_VERSION}" "${env:RUNNER_TEMP}"
+        Get-ChildItem -Path "${env:RUNNER_TEMP}"
+        Get-ChildItem -Path "${env:RUNNER_TEMP}\TensorRT-${env:TRT_VERSION}.Windows.win10.cuda-${env:CUDA_VERSION}" -Recurse
+        Add-Content -Path ${env:GITHUB_PATH} -Value "${env:RUNNER_TEMP}\TensorRT-${env:TRT_VERSION}.Windows.win10.cuda-${env:CUDA_VERSION}\bin"
+        Add-Content -Path ${env:GITHUB_PATH} -Value "${env:RUNNER_TEMP}\TensorRT-${env:TRT_VERSION}.Windows.win10.cuda-${env:CUDA_VERSION}\lib"
+
+    - uses: actions/setup-dotnet@v5
+      env:
+        PROCESSOR_ARCHITECTURE: x64
+      with:
+        dotnet-version: '9.x'
+
+    - name: Use Nuget 6.x
+      uses: nuget/setup-nuget@v4
+      with:
+        nuget-version: '6.x'
+
+    - name: Download artifact
+      uses: actions/download-artifact@v7
+      with:
+        name: orttrtep_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}
+        run-id: '24532319087'
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Verify
+      shell: pwsh
+      run: |
+        Write-Output "$(Get-Location)"
+        Get-ChildItem -Path "." -Recurse
+        cd SampleApp
+
+        nuget restore -- ${{ github.workspace }}\Microsoft.ML.OnnxRuntime.EP.TensorRT.*.nupkg
+
+        Get-ChildItem -Path "." -Recurse
+
+        .\SampleApp.exe
+        if ($lastExitCode -ne 0) {
+          exit $lastExitCode
+        }

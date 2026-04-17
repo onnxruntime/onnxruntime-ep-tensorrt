@@ -37,9 +37,9 @@ jobs:
     runs-on: [
       "self-hosted",
       "1ES.Pool=onnxruntime-ep-github-Win",
-      "JobId=trtep-win-x64-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
+      "JobId=trtep-${{ github.job }}-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
-    name: Build TRTEp Win-x64 CUDA${{ matrix.cuda_version }} TRT${{ matrix.trt_version }} ${{ matrix.build_type }}
+    name: Build TRTEp CUDA${{ matrix.cuda_version }} TRT${{ matrix.trt_version }} ${{ matrix.build_type }}
 
     environment: Windows_x64
     env:
@@ -130,9 +130,9 @@ jobs:
     runs-on: [
       "self-hosted",
       "1ES.Pool=onnxruntime-ep-github-Win",
-      "JobId=ort-win-x64-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
+      "JobId=trtep-${{ github.job }}-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
-    name: Build ORT Win-x64 CUDA${{ matrix.cuda_version }} TRT${{ matrix.trt_version }} ${{ matrix.build_type }}
+    name: Build ORT CUDA${{ matrix.cuda_version }} TRT${{ matrix.trt_version }} ${{ matrix.build_type }}
 
     environment: Windows_x64
     env:
@@ -252,9 +252,9 @@ jobs:
     runs-on: [
       "self-hosted",
       "1ES.Pool=onnxruntime-ep-github-Win-GPU-A10",
-      "JobId=trtep-win-x64-test-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
+      "JobId=trtep-${{ github.job }}-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
-    name: Test TRTEp Win-x64 CUDA${{ matrix.cuda_version }} TRT${{ matrix.trt_version }} ${{ matrix.build_type }}
+    name: Test CUDA${{ matrix.cuda_version }} TRT${{ matrix.trt_version }} ${{ matrix.build_type }}
     needs: [trtep-build, ort-build]
 
     environment: Windows_x64
@@ -346,16 +346,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        build_type: [RelWithDebInfo]  # Debug
+        build_type: [Debug, RelWithDebInfo]
         cuda_version: ['12.9'] #, '13.0']
         trt_version: ['10.14.1.48']
 
     runs-on: [
       "self-hosted",
       "1ES.Pool=onnxruntime-ep-github-Win",
-      "JobId=trtep-win-x64-packaging-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
+      "JobId=trtep-${{ github.job }}-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
-    name: Package TRTEp Win-x64 CUDA${{ matrix.cuda_version }} TRT${{ matrix.trt_version }} ${{ matrix.build_type }}
+    name: Pack CUDA${{ matrix.cuda_version }} TRT${{ matrix.trt_version }} ${{ matrix.build_type }}
     # needs: [run-tests]
 
     environment: Windows_x64
@@ -404,9 +404,9 @@ jobs:
         Move-Item "$SourceDir\ORTTensorRTEp.pdb" -Destination $TargetDir
 
         Get-ChildItem -Path "$TargetDir"
+        cd csharp\Microsoft.ML.OnnxRuntime.EP.TensorRT
 
-        dotnet build .\csharp\Microsoft.ML.OnnxRuntime.EP.TensorRT\Microsoft.ML.OnnxRuntime.EP.TensorRT.csproj -c ${env:BUILD_TYPE}
-        dotnet pack .\csharp\Microsoft.ML.OnnxRuntime.EP.TensorRT\Microsoft.ML.OnnxRuntime.EP.TensorRT.csproj -c ${env:BUILD_TYPE}
+        dotnet pack Microsoft.ML.OnnxRuntime.EP.TensorRT.csproj -c ${env:BUILD_TYPE}
 
     - name: Upload build artifacts
       if: ${{ !cancelled() }}
@@ -423,16 +423,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        build_type: [RelWithDebInfo] # Debug, 
+        build_type: [Debug, RelWithDebInfo]
         cuda_version: ['12.9']
         trt_version: ['10.14.1.48']
 
     runs-on: [
       "self-hosted",
       "1ES.Pool=onnxruntime-ep-github-Win-GPU-A10",
-      "JobId=windows-verify-package-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
+      "JobId=trtep-${{ github.job }}-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
-    name: Win Verify CUDA${{ matrix.cuda_version }} ${{ matrix.build_type }}
+    name: Verify CUDA${{ matrix.cuda_version }} TRT${{ matrix.trt_version }} ${{ matrix.build_type }}
     needs: packaging
 
     environment: Windows_x64
@@ -469,11 +469,6 @@ jobs:
       with:
         dotnet-version: '9.x'
 
-    - name: Use Nuget 6.x
-      uses: nuget/setup-nuget@v4
-      with:
-        nuget-version: '6.x'
-
     - name: Checkout Code
       uses: actions/checkout@v6
       with:
@@ -489,22 +484,13 @@ jobs:
     - name: Build SampleApp
       shell: pwsh
       working-directory: ${{ github.workspace }}\csharp\SampleApp
-      run: |
-        Get-ChildItem -Path "${{ github.workspace }}"
-        Get-ChildItem -Path "${{ github.workspace }}\csharp"
-        Get-ChildItem -Path "${{ github.workspace }}\csharp\local_feed"
-
-        dotnet build SampleApp.csproj -c ${env:BUILD_TYPE}
-
-        Get-ChildItem -Path "${{ github.workspace }}\csharp\SampleApp\bin\${env:BUILD_TYPE}" -Recurse
+      run: dotnet build SampleApp.csproj -c ${env:BUILD_TYPE}
 
     - name: Verify SampleApp
       shell: pwsh
       working-directory: ${{ github.workspace }}\csharp\SampleApp\bin
       run: |
-        Write-Output "$(Get-Location)"
         cd $(Split-Path -Path (Get-ChildItem -Path "." -Filter "SampleApp.exe" -Recurse ).FullName -Parent)
-        Write-Output "$(Get-Location)"
 
         .\SampleApp.exe
         if ($lastExitCode -ne 0) {

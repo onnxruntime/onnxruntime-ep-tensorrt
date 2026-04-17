@@ -346,7 +346,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        build_type: [Debug, RelWithDebInfo]
+        build_type: [RelWithDebInfo]  # Debug
         cuda_version: ['12.9'] #, '13.0']
         trt_version: ['10.14.1.48']
 
@@ -414,8 +414,8 @@ jobs:
       with:
         name: ${{ env.ARTIFACT_NAME }}
         path: |
-          ".\csharp\Microsoft.ML.OnnxRuntime.EP.TensorRT\bin\${env:BUILD_TYPE}\Microsoft.ML.OnnxRuntime.EP.TensorRT.*.nupkg"
-          ".\csharp\Microsoft.ML.OnnxRuntime.EP.TensorRT\bin\${env:BUILD_TYPE}\Microsoft.ML.OnnxRuntime.EP.TensorRT.*.snupkg"
+          ".\csharp\Microsoft.ML.OnnxRuntime.EP.TensorRT\bin\${{ matrix.build_type }}\Microsoft.ML.OnnxRuntime.EP.TensorRT.*.nupkg"
+          ".\csharp\Microsoft.ML.OnnxRuntime.EP.TensorRT\bin\${{ matrix.build_type }}\Microsoft.ML.OnnxRuntime.EP.TensorRT.*.snupkg"
 
 # Verify Package ######################################################################################################
 

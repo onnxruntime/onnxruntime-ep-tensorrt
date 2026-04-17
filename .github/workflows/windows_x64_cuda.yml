@@ -414,8 +414,8 @@ jobs:
       with:
         name: ${{ env.ARTIFACT_NAME }}
         path: |
-          "./csharp/Microsoft.ML.OnnxRuntime.EP.TensorRT/bin/${{ matrix.build_type }}/Microsoft.ML.OnnxRuntime.EP.TensorRT.*.nupkg"
-          "./csharp/Microsoft.ML.OnnxRuntime.EP.TensorRT/bin/${{ matrix.build_type }}/Microsoft.ML.OnnxRuntime.EP.TensorRT.*.snupkg"
+          ./csharp/Microsoft.ML.OnnxRuntime.EP.TensorRT/bin/${{ matrix.build_type }}/Microsoft.ML.OnnxRuntime.EP.TensorRT.*.nupkg
+          ./csharp/Microsoft.ML.OnnxRuntime.EP.TensorRT/bin/${{ matrix.build_type }}/Microsoft.ML.OnnxRuntime.EP.TensorRT.*.snupkg
 
 # Verify Package ######################################################################################################
 

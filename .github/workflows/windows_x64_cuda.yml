@@ -23,9 +23,9 @@ env:
 
 jobs:
 
-# TRTEp Build #########################################################################################################
+# Build TRT Ep ########################################################################################################
 
-  trtep-build:
+  build-trtep:
     if: false
     strategy:
       fail-fast: false
@@ -116,9 +116,9 @@ jobs:
         name: ${{ env.ARTIFACT_NAME }}
         path: out/${{ env.ARTIFACT_NAME }}
 
-# ORT Build ###########################################################################################################
+# Build ORT ###########################################################################################################
 
-  ort-build:
+  build-ort:
     if: false
     strategy:
       fail-fast: false
@@ -255,7 +255,7 @@ jobs:
       "JobId=trtep-${{ github.job }}-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
     name: Test CUDA${{ matrix.cuda_version }} TRT${{ matrix.trt_version }} ${{ matrix.build_type }}
-    needs: [trtep-build, ort-build]
+    needs: [build-trtep, build-ort]
 
     environment: Windows_x64
     env:
@@ -356,7 +356,7 @@ jobs:
       "JobId=trtep-${{ github.job }}-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
     name: Pack CUDA${{ matrix.cuda_version }} TRT${{ matrix.trt_version }} ${{ matrix.build_type }}
-    # needs: [run-tests]
+    # needs: run-tests
 
     environment: Windows_x64
     env:
@@ -386,12 +386,10 @@ jobs:
         sparse-checkout: csharp/Microsoft.ML.OnnxRuntime.EP.TensorRT
         sparse-checkout-cone-mode: false
 
-    - name: Download TRT Ep
+    - name: Download TRTEp artifacts
       uses: actions/download-artifact@v7
       with:
         name: Windows_x64_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}
-        run-id: '24532319087'
-        github-token: ${{ secrets.GITHUB_TOKEN }}
         path: orttrtep
 
     - name: Build Nuget Package
@@ -406,6 +404,7 @@ jobs:
         Get-ChildItem -Path "$TargetDir"
         cd csharp\Microsoft.ML.OnnxRuntime.EP.TensorRT
 
+        dotnet build Microsoft.ML.OnnxRuntime.EP.TensorRT.csproj -c ${env:BUILD_TYPE}
         dotnet pack Microsoft.ML.OnnxRuntime.EP.TensorRT.csproj -c ${env:BUILD_TYPE}
 
     - name: Upload build artifacts

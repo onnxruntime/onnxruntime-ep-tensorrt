@@ -17,6 +17,9 @@ on:
 
 
 jobs:
+
+# Build Image #########################################################################################################
+
   build-image:
     if: false
     strategy:
@@ -28,7 +31,7 @@ jobs:
     runs-on: [
       "self-hosted",
       "1ES.Pool=onnxruntime-ep-Ubuntu2404-AMD-CPU",
-      "JobId=trtep-linux-x64-image-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
+      "JobId=trtep-${{ github.job }}-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
     name: Build Image CUDA${{ matrix.cuda_version }} TRT${{ matrix.trt_version }}
 
@@ -73,13 +76,8 @@ jobs:
         name: job_${{ strategy.job-index }}
         path: job_${{ strategy.job-index }}
 
+# Build Matrix ########################################################################################################
 
-  # NOTE: GHA doesn't yet support passing outputs from multiple jobs run thru' strategy matrix. To work around that
-  # limitation, each job in the strategy matrix uploads an artifact with the information it intends to pass downstream.
-  # A separate job collects all the artifacts and builds the matrix. For more information see below -
-  #   - https://github.com/actions/runner/pull/2477
-  #   - https://github.com/orgs/community/discussions/25634
-  #   - https://github.com/orgs/community/discussions/17245
   build-matrix:
     if: false
     runs-on: ubuntu-latest
@@ -87,6 +85,13 @@ jobs:
     outputs:
       matrix: ${{ steps.gen-matrix.outputs.matrix }}
     name: Build Strategy Matrix
+
+    # NOTE: GHA doesn't yet support passing outputs from multiple jobs run thru' strategy matrix. To work around that
+    # limitation, each job in the strategy matrix uploads an artifact with the information it intends to pass downstream.
+    # A separate job collects all the artifacts and builds the matrix. For more information see below -
+    #   - https://github.com/actions/runner/pull/2477
+    #   - https://github.com/orgs/community/discussions/25634
+    #   - https://github.com/orgs/community/discussions/17245
 
     steps:
     - name: Download artifacts
@@ -122,8 +127,9 @@ jobs:
         with open(os.environ['GITHUB_OUTPUT'], 'a') as fh:
           print(f'matrix={json.dumps(matrix)}', file=fh)
 
+# Build TRT EP ########################################################################################################
 
-  trtep-build:
+  build-trtep:
     if: false
     strategy:
       fail-fast: false
@@ -133,7 +139,7 @@ jobs:
     runs-on: [
       "self-hosted",
       "1ES.Pool=onnxruntime-ep-Ubuntu2404-AMD-CPU",
-      "JobId=trtep-linux-x64-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
+      "JobId=trtep-${{ github.job }}-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
     needs: build-matrix
     name: Build TRTEp Linux-x64 CUDA${{ matrix.config.cuda_version }} TRT${{ matrix.config.trt_version }} ${{ matrix.config.build_type }}
@@ -180,8 +186,9 @@ jobs:
         name: ${{ env.ARTIFACT_NAME }}
         path: out/${{ env.ARTIFACT_NAME }}
 
+# Build ORT ###########################################################################################################
 
-  ort-build:
+  build-ort:
     if: false
     strategy:
       fail-fast: false
@@ -191,7 +198,7 @@ jobs:
     runs-on: [
       "self-hosted",
       "1ES.Pool=onnxruntime-ep-Ubuntu2404-AMD-CPU",
-      "JobId=ort-linux-x64-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
+      "JobId=trtep-${{ github.job }}-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
     needs: build-matrix
     name: Build ORT Linux-x64 CUDA${{ matrix.config.cuda_version }} ${{ matrix.config.build_type }}
@@ -279,6 +286,7 @@ jobs:
 # Run Tests ###########################################################################################################
 
   run-tests:
+    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -290,9 +298,10 @@ jobs:
       "self-hosted",
       "1ES.Pool=onnxruntime-ep-github-linux-a10",
       "1ES.ImageOverride=onnxruntime-ubuntu2204-CUDA-A10",
-      "JobId=linux-ort-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
+      "JobId=trtep-${{ github.job }}-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
-    name: Linux Run Tests CUDA${{ matrix.cuda_version }} ${{ matrix.build_type }}
+    name: Test CUDA${{ matrix.cuda_version }} TRT${{ matrix.trt_version }} ${{ matrix.build_type }}
+    needs: [build-trtep, build-ort]
 
     container:
       image: 'ghcr.io/onnxruntime/onnxruntime-ep-tensorrt/ubuntu_2404_cuda12.9_trt10.14.1.48:sha256-463d90a20a513420863d8ba847891eaa5b23eb544dff9863667a503eee6ad850'
@@ -305,6 +314,7 @@ jobs:
       CMAKE_CUDA_ARCHITECTURES: 86
       ONNXRUNTIME_TEST_GPU_DEVICE_ID: '0'
       ARTIFACT_NAME: orttrtep_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}.results
+      BUILD_TYPE: ${{ matrix.build_type }}
       CUDA_VERSION: ${{ matrix.cuda_version }}
       TRT_VERSION: ${{ matrix.trt_version }}
 
@@ -319,16 +329,12 @@ jobs:
       uses: actions/download-artifact@v7
       with:
         name: Linux_x64_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}
-        run-id: '24531338476'
-        github-token: ${{ secrets.GITHUB_TOKEN }}
         path: orttrtep
 
     - name: Download ORT artifacts
       uses: actions/download-artifact@v7
       with:
         name: 'ort_linux_x64_cuda${{ matrix.cuda_version }}_${{ matrix.build_type }}'
-        run-id: '24531338476'
-        github-token: ${{ secrets.GITHUB_TOKEN }}
         path: onnxruntime
 
     - name: Setup python
@@ -367,3 +373,84 @@ jobs:
         path: |
             ${{ env.ARTIFACT_NAME }}.xml
             ${{ env.ARTIFACT_NAME }}.log
+
+# Packaging ###########################################################################################################
+
+  packaging:
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [RelWithDebInfo] # Debug
+        cuda_version: ['12.9'] #, '13.0']
+        trt_version: ['10.14.1.48']
+
+    runs-on: [
+      "self-hosted",
+      "1ES.Pool=onnxruntime-ep-github-linux-a10",
+      "1ES.ImageOverride=onnxruntime-ubuntu2204-CUDA-A10",
+      "JobId=trtep-${{ github.job }}-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
+    ]
+    name: Pack CUDA${{ matrix.cuda_version }} TRT${{ matrix.trt_version }} ${{ matrix.build_type }}
+    # needs: [run-tests]
+
+    container:
+      image: 'ghcr.io/onnxruntime/onnxruntime-ep-tensorrt/ubuntu_2404_cuda12.9_trt10.14.1.48:sha256-463d90a20a513420863d8ba847891eaa5b23eb544dff9863667a503eee6ad850'
+      options: --gpus all
+    environment: Linux_x64
+    env:
+      AZCOPY_AUTO_LOGIN_TYPE: ${{ vars.AZCOPY_AUTO_LOGIN_TYPE }}
+      AZCOPY_MSI_CLIENT_ID: ${{ vars.AZCOPY_MSI_CLIENT_ID }}
+      ARTIFACT_NAME: orttrtep_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}
+      BUILD_TYPE: ${{ matrix.build_type }}
+      CUDA_VERSION: ${{ matrix.cuda_version }}
+      TRT_VERSION: ${{ matrix.trt_version }}
+
+    steps:
+    - name: Setup .NET SDK
+      uses: actions/setup-dotnet@v5
+      env:
+        PROCESSOR_ARCHITECTURE: x64
+      with:
+        dotnet-version: '9.x'
+
+    - name: Use Nuget
+      uses: nuget/setup-nuget@v4
+      with:
+        nuget-version: '6.x'
+
+    - name: Checkout Code
+      uses: actions/checkout@v6
+      with:
+        sparse-checkout: csharp/Microsoft.ML.OnnxRuntime.EP.TensorRT
+        sparse-checkout-cone-mode: false
+
+    - name: Download TRTEp artifacts
+      uses: actions/download-artifact@v7
+      with:
+        name: Linux_x64_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}
+        run-id: '24531338476'
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        path: orttrtep
+
+    - name: Build Nuget Package
+      shell: pwsh
+      run: |
+        $SourceDir = ".\orttrtep\bin"
+        $TargetDir = ".\csharp\Microsoft.ML.OnnxRuntime.EP.TensorRT\runtimes\win-x64\native"
+        $null = New-Item -Type Directory -Force $TargetDir
+        Move-Item "$SourceDir\ORTTensorRTEp.dll" -Destination $TargetDir
+        Move-Item "$SourceDir\ORTTensorRTEp.pdb" -Destination $TargetDir
+
+        Get-ChildItem -Path "$TargetDir"
+        cd csharp\Microsoft.ML.OnnxRuntime.EP.TensorRT
+
+        dotnet pack Microsoft.ML.OnnxRuntime.EP.TensorRT.csproj -c ${env:BUILD_TYPE}
+
+    - name: Upload build artifacts
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ env.ARTIFACT_NAME }}
+        path: |
+          ./csharp/Microsoft.ML.OnnxRuntime.EP.TensorRT/bin/${{ matrix.build_type }}/Microsoft.ML.OnnxRuntime.EP.TensorRT.*.nupkg
+          ./csharp/Microsoft.ML.OnnxRuntime.EP.TensorRT/bin/${{ matrix.build_type }}/Microsoft.ML.OnnxRuntime.EP.TensorRT.*.snupkg

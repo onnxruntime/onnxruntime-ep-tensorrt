@@ -26,7 +26,6 @@ jobs:
 # Build TRT Ep ########################################################################################################
 
   build-trtep:
-    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -119,7 +118,6 @@ jobs:
 # Build ORT ###########################################################################################################
 
   build-ort:
-    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -241,7 +239,6 @@ jobs:
 # Run Tests ###########################################################################################################
 
   run-tests:
-    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -356,7 +353,7 @@ jobs:
       "JobId=trtep-${{ github.job }}-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
     name: Pack CUDA${{ matrix.cuda_version }} TRT${{ matrix.trt_version }} ${{ matrix.build_type }}
-    # needs: run-tests
+    needs: run-tests
 
     environment: Windows_x64
     env:
@@ -391,8 +388,6 @@ jobs:
       with:
         name: Windows_x64_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}
         path: orttrtep
-        run-id: '24532319087'
-        github-token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Build Nuget Package
       shell: pwsh

@@ -39,7 +39,6 @@ jobs:
       "JobId=trtep-${{ github.job }}-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
     name: Build TRTEp CUDA${{ matrix.cuda_version }} TRT${{ matrix.trt_version }} ${{ matrix.build_type }}
-
     environment: Windows_x64
     env:
       AZCOPY_AUTO_LOGIN_TYPE: ${{ vars.AZCOPY_AUTO_LOGIN_TYPE }}
@@ -48,6 +47,8 @@ jobs:
       BUILD_TYPE: ${{ matrix.build_type }}
       CUDA_VERSION: ${{ matrix.cuda_version }}
       TRT_VERSION: ${{ matrix.trt_version }}
+    permissions:
+      contents: read
 
     steps:
     - name: Install Ninja
@@ -131,7 +132,6 @@ jobs:
       "JobId=trtep-${{ github.job }}-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
     name: Build ORT CUDA${{ matrix.cuda_version }} TRT${{ matrix.trt_version }} ${{ matrix.build_type }}
-
     environment: Windows_x64
     env:
       ALLOW_RELEASED_ONNX_OPSET_ONLY: '0'
@@ -142,6 +142,8 @@ jobs:
       BUILD_TYPE: ${{ matrix.build_type }}
       CUDA_VERSION: ${{ matrix.cuda_version }}
       TRT_VERSION: ${{ matrix.trt_version }}
+    permissions:
+      contents: read
 
     steps:
     - name: Checkout Code
@@ -253,7 +255,6 @@ jobs:
     ]
     name: Test CUDA${{ matrix.cuda_version }} TRT${{ matrix.trt_version }} ${{ matrix.build_type }}
     needs: [build-trtep, build-ort]
-
     environment: Windows_x64
     env:
       ALLOW_RELEASED_ONNX_OPSET_ONLY: '0'
@@ -265,6 +266,8 @@ jobs:
       BUILD_TYPE: ${{ matrix.build_type }}
       CUDA_VERSION: ${{ matrix.cuda_version }}
       TRT_VERSION: ${{ matrix.trt_version }}
+    permissions:
+      contents: read
 
     steps:
     - name: Checkout Code
@@ -354,7 +357,6 @@ jobs:
     ]
     name: Pack CUDA${{ matrix.cuda_version }} TRT${{ matrix.trt_version }} ${{ matrix.build_type }}
     needs: run-tests
-
     environment: Windows_x64
     env:
       AZCOPY_AUTO_LOGIN_TYPE: ${{ vars.AZCOPY_AUTO_LOGIN_TYPE }}
@@ -363,6 +365,8 @@ jobs:
       BUILD_TYPE: ${{ matrix.build_type }}
       CUDA_VERSION: ${{ matrix.cuda_version }}
       TRT_VERSION: ${{ matrix.trt_version }}
+    permissions:
+      contents: read
 
     steps:
     - name: Setup .NET SDK
@@ -430,7 +434,6 @@ jobs:
     ]
     name: Verify CUDA${{ matrix.cuda_version }} TRT${{ matrix.trt_version }} ${{ matrix.build_type }}
     needs: packaging
-
     environment: Windows_x64
     env:
       AZCOPY_AUTO_LOGIN_TYPE: ${{ vars.AZCOPY_AUTO_LOGIN_TYPE }}
@@ -438,6 +441,8 @@ jobs:
       BUILD_TYPE: ${{ matrix.build_type }}
       CUDA_VERSION: ${{ matrix.cuda_version }}
       TRT_VERSION: ${{ matrix.trt_version }}
+    permissions:
+      contents: read
 
     steps:
     - name: Download CUDA SDK v${{ matrix.cuda_version }}

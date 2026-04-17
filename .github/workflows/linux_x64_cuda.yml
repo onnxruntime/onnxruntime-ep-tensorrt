@@ -34,7 +34,6 @@ jobs:
       "JobId=trtep-${{ github.job }}-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
     name: Build Image CUDA${{ matrix.cuda_version }} TRT${{ matrix.trt_version }}
-
     environment: Linux_x64
     env:
       AZCOPY_AUTO_LOGIN_TYPE: ${{ vars.AZCOPY_AUTO_LOGIN_TYPE }}
@@ -85,6 +84,8 @@ jobs:
     outputs:
       matrix: ${{ steps.gen-matrix.outputs.matrix }}
     name: Build Strategy Matrix
+    permissions:
+      contents: read
 
     # NOTE: GHA doesn't yet support passing outputs from multiple jobs run thru' strategy matrix. To work around that
     # limitation, each job in the strategy matrix uploads an artifact with the information it intends to pass downstream.
@@ -149,6 +150,8 @@ jobs:
       AZCOPY_AUTO_LOGIN_TYPE: ${{ vars.AZCOPY_AUTO_LOGIN_TYPE }}
       AZCOPY_MSI_CLIENT_ID: ${{ vars.AZCOPY_MSI_CLIENT_ID }}
       ARTIFACT_NAME: Linux_x64_cuda${{ matrix.config.cuda_version }}_trt${{ matrix.config.trt_version }}_${{ matrix.config.build_type }}
+    permissions:
+      contents: read
 
     steps:
     - name: Checkout Code
@@ -202,7 +205,6 @@ jobs:
     ]
     needs: build-matrix
     name: Build ORT Linux-x64 CUDA${{ matrix.config.cuda_version }} ${{ matrix.config.build_type }}
-
     container: ${{ matrix.config.full-image-name }}
     environment: Linux_x64
     env:
@@ -212,6 +214,8 @@ jobs:
       AZCOPY_MSI_CLIENT_ID: ${{ vars.AZCOPY_MSI_CLIENT_ID }}
       CMAKE_CUDA_ARCHITECTURES: 86
       ONNXRUNTIME_TEST_GPU_DEVICE_ID: '0'
+    permissions:
+      contents: read
 
     steps:
     - name: Checkout Code
@@ -302,7 +306,6 @@ jobs:
     ]
     name: Test CUDA${{ matrix.cuda_version }} TRT${{ matrix.trt_version }} ${{ matrix.build_type }}
     needs: [build-trtep, build-ort]
-
     container:
       image: 'ghcr.io/onnxruntime/onnxruntime-ep-tensorrt/ubuntu_2404_cuda12.9_trt10.14.1.48:sha256-463d90a20a513420863d8ba847891eaa5b23eb544dff9863667a503eee6ad850'
       options: --gpus all
@@ -317,6 +320,8 @@ jobs:
       BUILD_TYPE: ${{ matrix.build_type }}
       CUDA_VERSION: ${{ matrix.cuda_version }}
       TRT_VERSION: ${{ matrix.trt_version }}
+    permissions:
+      contents: read
 
     steps:
     - name: Checkout Code
@@ -392,7 +397,6 @@ jobs:
     ]
     name: Pack CUDA${{ matrix.cuda_version }} TRT${{ matrix.trt_version }} ${{ matrix.build_type }}
     # needs: [run-tests]
-
     container:
       image: 'ghcr.io/onnxruntime/onnxruntime-ep-tensorrt/ubuntu_2404_cuda12.9_trt10.14.1.48:sha256-463d90a20a513420863d8ba847891eaa5b23eb544dff9863667a503eee6ad850'
       options: --gpus all
@@ -404,19 +408,21 @@ jobs:
       BUILD_TYPE: ${{ matrix.build_type }}
       CUDA_VERSION: ${{ matrix.cuda_version }}
       TRT_VERSION: ${{ matrix.trt_version }}
+    permissions:
+      contents: read
 
     steps:
-    - name: Setup .NET SDK
-      uses: actions/setup-dotnet@v5
-      env:
-        PROCESSOR_ARCHITECTURE: x64
-      with:
-        dotnet-version: '9.x'
+    # - name: Setup .NET SDK
+    #   uses: actions/setup-dotnet@v5
+    #   env:
+    #     PROCESSOR_ARCHITECTURE: x64
+    #   with:
+    #     dotnet-version: '9.x'
 
-    - name: Use Nuget
-      uses: nuget/setup-nuget@v4
-      with:
-        nuget-version: '6.x'
+    # - name: Use Nuget
+    #   uses: nuget/setup-nuget@v4
+    #   with:
+    #     nuget-version: '6.x'
 
     - name: Checkout Code
       uses: actions/checkout@v6

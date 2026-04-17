@@ -1154,19 +1154,24 @@ print("args: ", args)
 
 p = subprocess.Popen(
   args,
-  text=True,
-  universal_newlines=True,
   stdout=subprocess.PIPE,
   stderr=subprocess.STDOUT,
   shell=False
 )
 
+# NOTE: Read stdout as binary since the process can dump non-utf8 bytes
+# and that would throw an exception when decoding.
+
 log_filter_re = re.compile(r"\[\s*(?:OK|RUN|FAILED|DISABLED|PASSED|SKIPPED)\s*\]")
-with Path(sys.argv[2] + ".log").open('w') as log_strm:
-  for line in p.stdout:
+with Path(sys.argv[2] + ".log").open("wb") as log_strm:
+  for line in iter(p.stdout.readline, b''):
     log_strm.write(line)
-    if log_filter_re.match(line):
-      print(line, end='', flush=True)
+    try:
+      decoded_line = line.decode('utf-8').strip()
+      if log_filter_re.match(decoded_line):
+        print(decoded_line, end='', flush=True)
+    except:
+      pass
 
   p.stdout.close()
 

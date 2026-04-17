@@ -450,6 +450,7 @@ jobs:
       "JobId=windows-verify-package-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
     name: Win Verify CUDA${{ matrix.cuda_version }} ${{ matrix.build_type }}
+    needs: packaging
 
     environment: Windows_x64
     env:

@@ -605,6 +605,7 @@ jobs:
     - name: Verify
       shell: pwsh
       run: |
+        Get-Location
         cd (Split-Path (Get-ChildItem `
                           -Path "${{ github.workspace }}\csharp\SampleApp\bin" `
                           -Filter "SampleApp.exe" `
@@ -612,6 +613,7 @@ jobs:
                         ).FullName `
                         -Parent `
             )
+        Get-Location
 
         & SampleApp.exe
         if ($lastExitCode -ne 0) {

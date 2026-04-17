@@ -605,15 +605,15 @@ jobs:
     - name: Verify
       shell: pwsh
       run: |
-        & Get-Location
-        & cd (Split-Path (Get-ChildItem `
+        Write-Host Get-Location
+        cd (Split-Path -Path (Get-ChildItem `
                           -Path "${{ github.workspace }}\csharp\SampleApp\bin" `
                           -Filter "SampleApp.exe" `
                           -Recurse `
                         ).FullName `
                         -Parent `
             )
-        & Get-Location
+        Write-Host Get-Location
 
         & SampleApp.exe
         if ($lastExitCode -ne 0) {

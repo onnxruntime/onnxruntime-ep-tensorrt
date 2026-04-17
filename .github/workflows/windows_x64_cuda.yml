@@ -383,7 +383,7 @@ jobs:
     - name: Checkout Code
       uses: actions/checkout@v6
       with:
-        sparse-checkout: csharp
+        sparse-checkout: csharp/Microsoft.ML.OnnxRuntime.EP.TensorRT
         sparse-checkout-cone-mode: false
 
     - name: Download TRT Ep
@@ -408,31 +408,14 @@ jobs:
         dotnet build .\csharp\Microsoft.ML.OnnxRuntime.EP.TensorRT\Microsoft.ML.OnnxRuntime.EP.TensorRT.csproj -c ${env:BUILD_TYPE}
         dotnet pack .\csharp\Microsoft.ML.OnnxRuntime.EP.TensorRT\Microsoft.ML.OnnxRuntime.EP.TensorRT.csproj -c ${env:BUILD_TYPE}
 
-        $null = New-Item -Type Directory -Force ".\csharp\local_feed"
-        Copy-Item ".\csharp\Microsoft.ML.OnnxRuntime.EP.TensorRT\bin\${env:BUILD_TYPE}\Microsoft.ML.OnnxRuntime.EP.TensorRT.*.nupkg" -Destination ".\csharp\local_feed"
-        Copy-Item ".\csharp\Microsoft.ML.OnnxRuntime.EP.TensorRT\bin\${env:BUILD_TYPE}\Microsoft.ML.OnnxRuntime.EP.TensorRT.*.snupkg" -Destination ".\csharp\local_feed"
-
-        Get-ChildItem -Path ".\csharp\local_feed"
-
-    - name: Build Sample App
-      shell: pwsh
-      working-directory: ${{ github.workspace }}\csharp\SampleApp
-      run: |
-        Get-ChildItem -Path "${{ github.workspace }}"
-        Get-ChildItem -Path "${{ github.workspace }}\csharp"
-        Get-ChildItem -Path "${{ github.workspace }}\csharp\local_feed"
-
-        dotnet build SampleApp.csproj -c ${env:BUILD_TYPE}
-
-        Get-ChildItem -Path "${{ github.workspace }}\csharp\SampleApp\bin\${env:BUILD_TYPE}" -Recurse
-        Move-Item "${{ github.workspace }}\csharp\SampleApp\bin\${env:BUILD_TYPE}" -Destination "${{ github.workspace }}\csharp\local_feed\SampleApp"
-
     - name: Upload build artifacts
       if: ${{ !cancelled() }}
       uses: actions/upload-artifact@v7
       with:
         name: ${{ env.ARTIFACT_NAME }}
-        path: "csharp/local_feed"
+        path: |
+          ".\csharp\Microsoft.ML.OnnxRuntime.EP.TensorRT\bin\${env:BUILD_TYPE}\Microsoft.ML.OnnxRuntime.EP.TensorRT.*.nupkg"
+          ".\csharp\Microsoft.ML.OnnxRuntime.EP.TensorRT\bin\${env:BUILD_TYPE}\Microsoft.ML.OnnxRuntime.EP.TensorRT.*.snupkg"
 
 # Verify Package ######################################################################################################
 
@@ -491,23 +474,37 @@ jobs:
       with:
         nuget-version: '6.x'
 
-    - name: Download artifact
+    - name: Checkout Code
+      uses: actions/checkout@v6
+      with:
+        sparse-checkout: csharp/SampleApp
+        sparse-checkout-cone-mode: false
+
+    - name: Download Nuget Package
       uses: actions/download-artifact@v7
       with:
         name: orttrtep_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}
-        run-id: '24532319087'
-        github-token: ${{ secrets.GITHUB_TOKEN }}
+        path: 'csharp/local_feed'
 
-    - name: Verify
+    - name: Build SampleApp
       shell: pwsh
+      working-directory: ${{ github.workspace }}\csharp\SampleApp
+      run: |
+        Get-ChildItem -Path "${{ github.workspace }}"
+        Get-ChildItem -Path "${{ github.workspace }}\csharp"
+        Get-ChildItem -Path "${{ github.workspace }}\csharp\local_feed"
+
+        dotnet build SampleApp.csproj -c ${env:BUILD_TYPE}
+
+        Get-ChildItem -Path "${{ github.workspace }}\csharp\SampleApp\bin\${env:BUILD_TYPE}" -Recurse
+
+    - name: Verify SampleApp
+      shell: pwsh
+      working-directory: ${{ github.workspace }}\csharp\SampleApp\bin
       run: |
         Write-Output "$(Get-Location)"
-        Get-ChildItem -Path "." -Recurse
-        cd SampleApp
-
-        nuget restore -- ${{ github.workspace }}\Microsoft.ML.OnnxRuntime.EP.TensorRT.*.nupkg
-
-        Get-ChildItem -Path "." -Recurse
+        cd $(Split-Path -Path (Get-ChildItem -Path "." -Filter "SampleApp.exe" -Recurse ).FullName -Parent)
+        Write-Output "$(Get-Location)"
 
         .\SampleApp.exe
         if ($lastExitCode -ne 0) {

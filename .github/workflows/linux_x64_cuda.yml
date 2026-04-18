@@ -17,20 +17,23 @@ on:
 
 
 jobs:
+
+# Build Image #########################################################################################################
+
   build-image:
     strategy:
       fail-fast: false
       matrix:
-        cuda_version: ['12.9', '13.0']
+        cuda_version: ['12.9']
         trt_version: ['10.14.1.48']
 
     runs-on: [
       "self-hosted",
       "1ES.Pool=onnxruntime-ep-Ubuntu2404-AMD-CPU",
-      "JobId=linux-tensorrtep-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
+      # NOTE: JobId should be uniquely identifiable so including the config params in the value
+      "JobId=trtep-${{ github.job }}-cuda${{ matrix.cuda_version }}-trt${{ matrix.trt_version }}-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
     name: Build Image CUDA${{ matrix.cuda_version }} TRT${{ matrix.trt_version }}
-
     environment: Linux_x64
     env:
       AZCOPY_AUTO_LOGIN_TYPE: ${{ vars.AZCOPY_AUTO_LOGIN_TYPE }}
@@ -48,13 +51,13 @@ jobs:
         sparse-checkout-cone-mode: false
 
     - name: Build Docker Image
-      uses: microsoft/onnxruntime-github-actions/build-docker-image@v0.0.11
+      uses: microsoft/onnxruntime-github-actions/build-docker-image@v0.0.12
       id: build_docker_image_step
       with:
         dockerfile: ${{ github.workspace }}/.github/docker/Dockerfile.ubuntu_2404_cuda
         image-name: ghcr.io/onnxruntime/onnxruntime-ep-tensorrt/ubuntu_2404_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version}}
         build-args: 'BASE_IMAGE=nvidia/cuda:${{ matrix.cuda_version }}.1-cudnn-devel-ubuntu24.04 TRT_VERSION=${{ matrix.trt_version}}-1+cuda${{ matrix.cuda_version }} CMAKE_CUDA_ARCHITECTURES=${{ env.CMAKE_CUDA_ARCHITECTURES }} --network=host'
-        pull: true  # Toggle this once onnxruntime-github-actions@v0.0.12 release
+        pull: false
         push: true
         azure-container-registry-name: onnxruntimebuildcache
       env:
@@ -72,19 +75,23 @@ jobs:
         name: job_${{ strategy.job-index }}
         path: job_${{ strategy.job-index }}
 
+# Build Matrix ########################################################################################################
 
-  # NOTE: GHA doesn't yet support passing outputs from multiple jobs run thru' strategy matrix. To work around that
-  # limitation, each job in the strategy matrix uploads an artifact with the information it intends to pass downstream.
-  # A separate job collects all the artifacts and builds the matrix. For more information see below -
-  #   - https://github.com/actions/runner/pull/2477
-  #   - https://github.com/orgs/community/discussions/25634
-  #   - https://github.com/orgs/community/discussions/17245
   build-matrix:
     runs-on: ubuntu-latest
     needs: build-image
     outputs:
       matrix: ${{ steps.gen-matrix.outputs.matrix }}
     name: Build Strategy Matrix
+    permissions:
+      contents: read
+
+    # NOTE: GHA doesn't yet support passing outputs from multiple jobs run thru' strategy matrix. To work around that
+    # limitation, each job in the strategy matrix uploads an artifact with the information it intends to pass downstream.
+    # A separate job collects all the artifacts and builds the matrix. For more information see below -
+    #   - https://github.com/actions/runner/pull/2477
+    #   - https://github.com/orgs/community/discussions/25634
+    #   - https://github.com/orgs/community/discussions/17245
 
     steps:
     - name: Download artifacts
@@ -120,8 +127,9 @@ jobs:
         with open(os.environ['GITHUB_OUTPUT'], 'a') as fh:
           print(f'matrix={json.dumps(matrix)}', file=fh)
 
+# Build TRT EP ########################################################################################################
 
-  build-source:
+  build-trtep:
     strategy:
       fail-fast: false
       matrix:
@@ -130,16 +138,20 @@ jobs:
     runs-on: [
       "self-hosted",
       "1ES.Pool=onnxruntime-ep-Ubuntu2404-AMD-CPU",
-      "JobId=linux-tensorrtep-build-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
+      # NOTE: JobId should be uniquely identifiable so including the config params in the value
+      "JobId=trtep-${{ github.job }}-cuda${{ matrix.config.cuda_version }}-trt${{ matrix.config.trt_version }}-${{ matrix.config.build_type }}-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
     ]
     needs: build-matrix
-    name: Build ${{ matrix.config.build_type }} CUDA${{ matrix.config.cuda_version }} TRT${{ matrix.config.trt_version }}
+    name: Build TRTEp Linux-x64 CUDA${{ matrix.config.cuda_version }} TRT${{ matrix.config.trt_version }} ${{ matrix.config.build_type }}
     container: ${{ matrix.config.full-image-name }}
     environment: Linux_x64
     env:
       AZCOPY_AUTO_LOGIN_TYPE: ${{ vars.AZCOPY_AUTO_LOGIN_TYPE }}
       AZCOPY_MSI_CLIENT_ID: ${{ vars.AZCOPY_MSI_CLIENT_ID }}
       ARTIFACT_NAME: Linux_x64_cuda${{ matrix.config.cuda_version }}_trt${{ matrix.config.trt_version }}_${{ matrix.config.build_type }}
+    permissions:
+      contents: read
+      packages: read
 
     steps:
     - name: Checkout Code
@@ -147,6 +159,8 @@ jobs:
 
     - name: Setup ccache
       uses: hendrikmuhs/ccache-action@v1.2
+      with:
+        key: ${{ github.job }}-cuda${{ matrix.config.cuda_version }}-trt${{ matrix.config.trt_version }}-${{ matrix.config.build_type }}
 
     - name: Run the build
       run: |
@@ -174,3 +188,193 @@ jobs:
       with:
         name: ${{ env.ARTIFACT_NAME }}
         path: out/${{ env.ARTIFACT_NAME }}
+
+# Build ORT ###########################################################################################################
+
+  build-ort:
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJson(needs.build-matrix.outputs.matrix) }}
+
+    runs-on: [
+      "self-hosted",
+      "1ES.Pool=onnxruntime-ep-Ubuntu2404-AMD-CPU",
+      # NOTE: JobId should be uniquely identifiable so including the config params in the value
+      "JobId=trtep-${{ github.job }}-cuda${{ matrix.config.cuda_version }}-trt${{ matrix.config.trt_version }}-${{ matrix.config.build_type }}-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
+    ]
+    needs: build-matrix
+    name: Build ORT Linux-x64 CUDA${{ matrix.config.cuda_version }} ${{ matrix.config.build_type }}
+    container: ${{ matrix.config.full-image-name }}
+    environment: Linux_x64
+    env:
+      ALLOW_RELEASED_ONNX_OPSET_ONLY: '0'
+      ARTIFACT_NAME: ort_linux_x64_cuda${{ matrix.config.cuda_version }}_${{ matrix.config.build_type }}
+      AZCOPY_AUTO_LOGIN_TYPE: ${{ vars.AZCOPY_AUTO_LOGIN_TYPE }}
+      AZCOPY_MSI_CLIENT_ID: ${{ vars.AZCOPY_MSI_CLIENT_ID }}
+      CMAKE_CUDA_ARCHITECTURES: 86
+      ONNXRUNTIME_TEST_GPU_DEVICE_ID: '0'
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v6
+      with:
+        repository: microsoft/onnxruntime
+        ref: 'rel-1.25.0'
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Setup python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.14'
+        architecture: x64
+
+    - name: Install python modules
+      run: python -m pip install -r ./tools/ci_build/github/linux/python/requirements.txt
+
+    - name: Setup ccache
+      uses: hendrikmuhs/ccache-action@v1.2
+      with:
+        key: ${{ github.job }}-cuda${{ matrix.config.cuda_version }}-trt${{ matrix.config.trt_version }}-${{ matrix.config.build_type }}
+
+    - name: Build and Clean Binaries
+      run: |
+        env
+        # Caution with the use of github.workspace here. In containers,
+        #   ${{ github.workspace }} != $GITHUB_WORKSPACE
+        # Same is true for ${{ runner.temp }} and $RUNNER_TEMP
+        # Reported issue -
+        # https://github.com/actions/runner/issues/2058
+        
+        # Execute the build process
+        python $GITHUB_WORKSPACE/tools/ci_build/build.py \
+          --build \
+          --update \
+          --config ${{ matrix.config.build_type }} \
+          --build_dir build \
+          --use_cache \
+          --skip_submodule_sync \
+          --parallel \
+          --cmake_generator "Ninja" \
+          --build_shared_lib \
+          --target onnxruntime_provider_test
+
+        # Clean up the output directory before uploading artifacts
+        export outputDir="build/${{ matrix.config.build_type }}"
+
+        rm -rf "$outputDir/_deps"
+        rm -rf "$outputDir/CMakeCache.txt"
+        rm -rf "$outputDir/CMakeFiles"
+        rm -rf "$outputDir/lib"
+        rm -rf "$outputDir/models"
+        rm -rf "$outputDir/onnxruntime"
+        rm -rf "$outputDir/pybind11"
+        rm -rf "$outputDir/vcpkg_installed"
+        find $outputDir -type f -name '*.a' -delete
+        find $outputDir -type f -name '*.obj' -delete
+        find $outputDir -type f -name '*.pch' -delete
+        find $outputDir -type f -name '*.tlog' -delete
+
+        # Move the testdata folder under the output folder so
+        # it gets included as part of the artifact
+        mv onnxruntime/test/testdata $outputDir/.
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ env.ARTIFACT_NAME }}
+        path: build/${{ matrix.config.build_type }}
+
+# Run Tests ###########################################################################################################
+
+  run-tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJson(needs.build-matrix.outputs.matrix) }}
+
+    runs-on: [
+      "self-hosted",
+      "1ES.Pool=onnxruntime-ep-github-linux-a10",
+      "1ES.ImageOverride=onnxruntime-ubuntu2204-CUDA-A10",
+      # NOTE: JobId should be uniquely identifiable so including the config params in the value
+      "JobId=trtep-${{ github.job }}-cuda${{ matrix.config.cuda_version }}-trt${{ matrix.config.trt_version }}-${{ matrix.config.build_type }}-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"
+    ]
+    name: Test CUDA${{ matrix.config.cuda_version }} TRT${{ matrix.config.trt_version }} ${{ matrix.config.build_type }}
+    needs: [build-matrix, build-trtep, build-ort]
+    container:
+      image: ${{ matrix.config.full-image-name }}
+      options: --gpus all
+    environment: Linux_x64
+    env:
+      ALLOW_RELEASED_ONNX_OPSET_ONLY: '0'
+      AZCOPY_AUTO_LOGIN_TYPE: ${{ vars.AZCOPY_AUTO_LOGIN_TYPE }}
+      AZCOPY_MSI_CLIENT_ID: ${{ vars.AZCOPY_MSI_CLIENT_ID }}
+      CMAKE_CUDA_ARCHITECTURES: 86
+      ONNXRUNTIME_TEST_GPU_DEVICE_ID: '0'
+      ARTIFACT_NAME: orttrtep_cuda${{ matrix.config.cuda_version }}_trt${{ matrix.config.trt_version }}_${{ matrix.config.build_type }}.results
+      BUILD_TYPE: ${{ matrix.config.build_type }}
+      CUDA_VERSION: ${{ matrix.config.cuda_version }}
+      TRT_VERSION: ${{ matrix.config.trt_version }}
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v6
+      with:
+        sparse-checkout: .github
+        sparse-checkout-cone-mode: false
+
+    - name: Download TRTEp artifacts
+      uses: actions/download-artifact@v7
+      with:
+        name: Linux_x64_cuda${{ matrix.config.cuda_version }}_trt${{ matrix.config.trt_version }}_${{ matrix.config.build_type }}
+        path: orttrtep
+
+    - name: Download ORT artifacts
+      uses: actions/download-artifact@v7
+      with:
+        name: 'ort_linux_x64_cuda${{ matrix.config.cuda_version }}_${{ matrix.config.build_type }}'
+        path: onnxruntime
+
+    - name: Setup python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.x'
+        architecture: x64
+
+    - name: Setup library path
+      run: |
+        echo "TRTEP_LIBRARY_PATH=$GITHUB_WORKSPACE/orttrtep/lib/libORTTensorRTEp.so" >> $GITHUB_ENV
+
+    - name: Run tests
+      env:
+        ORT_UNIT_TEST_MAIN_LOG_LEVEL: 0
+        ORT_TRT_EP_ENABLE_BUILDER_PLACEHOLDER: 1
+        ORT_UNIT_TEST_MAIN_DYNAMIC_PLUGIN_EP_CONFIG_JSON: |
+          {
+            "ep_library_registration_name": "NvTensorRtRtx",
+            "ep_library_path": ${{ toJson(env.TRTEP_LIBRARY_PATH) }},
+            "selected_ep_name": "NvTensorRtRtx",
+            "default_ep_options": {}
+          }
+      run: |
+        env
+        chmod +x "$GITHUB_WORKSPACE/onnxruntime/onnxruntime_provider_test"
+        python "$GITHUB_WORKSPACE/.github/scripts/test_runner.py"   \
+          "$GITHUB_WORKSPACE/onnxruntime/onnxruntime_provider_test" \
+          "${{ env.ARTIFACT_NAME }}"
+
+    - name: Upload build artifacts
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ env.ARTIFACT_NAME }}
+        path: |
+            ${{ env.ARTIFACT_NAME }}.xml
+            ${{ env.ARTIFACT_NAME }}.log

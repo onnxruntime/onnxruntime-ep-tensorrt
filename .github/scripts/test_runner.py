@@ -20,7 +20,7 @@ print("cwd: ", os.getcwd())
 print("exe: ", sys.argv[1])
 
 # Map of test suite name to list of tests to exclude.
-# Use "[*]" as value to exclude the entire test suite.
+# Use ["*"] as value to exclude the entire test suite.
 exclusions = {
   "ActivationOpNoInfTest": [],
   "ActivationOpTest": [

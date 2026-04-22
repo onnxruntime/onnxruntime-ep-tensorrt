@@ -173,13 +173,6 @@ jobs:
       shell: cmd
       run: python -m pip install -r .\tools\ci_build\github\windows\python\requirements.txt
 
-    - name: Download CUDA SDK v${{ matrix.cuda_version }}
-      shell: pwsh
-      run: |
-        azcopy.exe cp --recursive "https://lotusscus.blob.core.windows.net/models/cuda_sdk/v${env:CUDA_VERSION}" "${env:RUNNER_TEMP}"
-        Get-ChildItem -Path "${env:RUNNER_TEMP}"
-        Get-ChildItem -Path "${env:RUNNER_TEMP}\v${env:CUDA_VERSION}" -Recurse
-
     - name: Locate vcvarsall and Setup Env
       uses: ./.github/actions/locate-vcvarsall-and-setup-env
       with:

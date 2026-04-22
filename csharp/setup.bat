@@ -4,11 +4,16 @@ REM Builds NuGet package that wraps TensorRT plugin EP
 
 IF "%~1"=="" (
     echo ERROR: No build configuration specified.
-    echo Usage: .\setup.bat [Debug^|Release]
+    echo Usage: .\setup.bat [Debug^|Release^|RelWithDebInfo]
     exit /b 1
 )
 
 SET "BUILD_CONFIG=%~1"
+ if /i not "%BUILD_CONFIG%"=="Debug" if /i not "%BUILD_CONFIG%"=="Release" if /i not "%BUILD_CONFIG%"=="RelWithDebInfo" (
+     echo ERROR: Unsupported build configuration "%BUILD_CONFIG%".
+     echo Usage: .\setup.bat [Debug^|Release^|RelWithDebInfo]
+     exit /b 1
+ )
 
 if "%TENSORRT_PLUGIN_EP_LIBRARY_PATH%"=="" (
     echo ERROR: TENSORRT_PLUGIN_EP_LIBRARY_PATH environment variable is not set.
@@ -48,8 +53,8 @@ if errorlevel 1 (
 )
 
 echo Building NuGet package ("%BUILD_CONFIG%") ...
-dotnet build .\Microsoft.ML.OnnxRuntime.EP.TensorRT\Microsoft.ML.OnnxRuntime.EP.TensorRT.csproj -c "%BUILD_CONFIG%"
-dotnet pack .\Microsoft.ML.OnnxRuntime.EP.TensorRT\Microsoft.ML.OnnxRuntime.EP.TensorRT.csproj -c "%BUILD_CONFIG%"
+dotnet build .\Microsoft.ML.OnnxRuntime.EP.TensorRT\Microsoft.ML.OnnxRuntime.EP.TensorRT.csproj -c "%BUILD_CONFIG%" || exit /b 1
+dotnet pack .\Microsoft.ML.OnnxRuntime.EP.TensorRT\Microsoft.ML.OnnxRuntime.EP.TensorRT.csproj -c "%BUILD_CONFIG%" || exit /b 1
 
 set "LOCAL_FEED_FOLDER=local_feed"
 if not exist "%LOCAL_FEED_FOLDER%" (
@@ -60,4 +65,13 @@ if not exist "%LOCAL_FEED_FOLDER%" (
 )
 
 copy /Y .\Microsoft.ML.OnnxRuntime.EP.TensorRT\bin\"%BUILD_CONFIG%"\Microsoft.ML.OnnxRuntime.EP.TensorRT.*.nupkg .\local_feed\
+if errorlevel 1 (
+     echo ERROR: Failed to copy NuGet package(s) from ".\Microsoft.ML.OnnxRuntime.EP.TensorRT\bin\%BUILD_CONFIG%\" to ".\local_feed\".
+     exit /b 1
+ )
+
 copy /Y .\Microsoft.ML.OnnxRuntime.EP.TensorRT\bin\"%BUILD_CONFIG%"\Microsoft.ML.OnnxRuntime.EP.TensorRT.*.snupkg .\local_feed\
+ if errorlevel 1 (
+     echo ERROR: Failed to copy symbol package(s) from ".\Microsoft.ML.OnnxRuntime.EP.TensorRT\bin\%BUILD_CONFIG%\" to ".\local_feed\".
+     exit /b 1
+ )

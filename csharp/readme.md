@@ -14,7 +14,7 @@ Follow instructions [here](../README.md#build-instructions) to build the native 
 
 ### Build the C\# NuGet Package
 
-Set the environment variable `TENSORRT_PLUGIN_EP_LIBRARY_PATH` to the path to the native plugin EP shared library. E.g., `tensorrt_plugin_ep.dll`.
+Set the environment variable `TENSORRT_PLUGIN_EP_LIBRARY_PATH` to the path to the native plugin EP shared library. E.g., `ORTTensorRTEp.dll`.
 
 Run `setup.bat` from this directory. Pass the build configuration (e.g., Release or Debug) as an argument.
 

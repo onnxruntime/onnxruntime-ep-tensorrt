@@ -5,7 +5,8 @@
 #   -DCMAKE_BUILD_TYPE=Debug                                        \
 #   -DORT_HOME=/path/to/ort_package/onnxruntime-win-x64-gpu-1.23.0  \
 #   -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc                  \
-#   -DTENSORRT_HOME=/path/to/tensorrt/TensorRT-10.3.0.26            \
+#   -DTENSORRT_HOME=/path/to/tensorrt/TensorRT-11.0.9               \
+#   -DTRT_MAJOR_VERSION=11                                          \
 #   -S .. -B .
 
 cmake_minimum_required(VERSION 3.25)
@@ -31,6 +32,11 @@ endif()
 if(NOT TENSORRT_HOME)
   message(FATAL_ERROR "Please specify TENSORRT_HOME, e.g. -DTENSORRT_HOME=/path/to/trt/")
 endif()
+
+if(NOT TRT_MAJOR_VERSION)
+  set(TRT_MAJOR_VERSION 10)
+endif()
+message(STATUS "TRT major version: ${TRT_MAJOR_VERSION}")
 
 # CMake config to force dynamic debug CRT or dynamic release CRT globally for all dependencies.
 if(MSVC)
@@ -157,18 +163,18 @@ FetchContent_MakeAvailable(flatbuffers)
 
 if(WIN32) # Windows
   set(TRT_LIBS
-    "${TENSORRT_HOME}/lib/nvinfer_10.lib"
-    "${TENSORRT_HOME}/lib/nvinfer_plugin_10.lib"
-    "${TENSORRT_HOME}/lib/nvonnxparser_10.lib"
+    "${TENSORRT_HOME}/lib/nvinfer_${TRT_MAJOR_VERSION}.lib"
+    "${TENSORRT_HOME}/lib/nvinfer_plugin_${TRT_MAJOR_VERSION}.lib"
+    "${TENSORRT_HOME}/lib/nvonnxparser_${TRT_MAJOR_VERSION}.lib"
   )
   set(ORT_LIBS "${ORT_LIBRARY_DIR}/onnxruntime.lib")
 
   target_link_options(ORTTensorRTEp PRIVATE "-DEF:${CMAKE_SOURCE_DIR}/src/tensorrt_execution_provider.def")
 else()
   set(TRT_LIBS
-    "${TENSORRT_HOME}/libnvinfer.so.10"
-    "${TENSORRT_HOME}/libnvinfer_plugin.so.10"
-    "${TENSORRT_HOME}/libnvonnxparser.so.10"
+    "${TENSORRT_HOME}/libnvinfer.so.${TRT_MAJOR_VERSION}"
+    "${TENSORRT_HOME}/libnvinfer_plugin.so.${TRT_MAJOR_VERSION}"
+    "${TENSORRT_HOME}/libnvonnxparser.so.${TRT_MAJOR_VERSION}"
   )
   set(ORT_LIBS "${ORT_LIBRARY_DIR}/libonnxruntime.so")
 endif()

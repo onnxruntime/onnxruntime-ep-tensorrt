@@ -891,12 +891,13 @@ SubGraphCollection_t TensorrtExecutionProvider::GetSupportedList(SubGraphCollect
         TensorrtLogger& trt_logger = GetTensorrtLogger(detailed_build_log_, logger_, &ort_api);
         auto trt_builder = GetBuilder(trt_logger);
         auto network_flags = 0;
-#if NV_TENSORRT_MAJOR > 8
+#if NV_TENSORRT_MAJOR <= 8
+        network_flags |= 1U << static_cast<uint32_t>(nvinfer1::NetworkDefinitionCreationFlag::kEXPLICIT_BATCH);
+#elif !((NV_TENSORRT_MAJOR == 11 && NV_TENSORRT_MINOR >= 1) || NV_TENSORRT_MAJOR > 11)
+        // kSTRONGLY_TYPED deprecated in TRT 11.1 (strongly typed mode is always enabled there)
         network_flags |= (fp16_enable_ || int8_enable_ || bf16_enable_)
                              ? 0
                              : 1U << static_cast<uint32_t>(nvinfer1::NetworkDefinitionCreationFlag::kSTRONGLY_TYPED);
-#else
-        network_flags |= 1U << static_cast<uint32_t>(nvinfer1::NetworkDefinitionCreationFlag::kEXPLICIT_BATCH);
 #endif
 
         auto trt_network = std::unique_ptr<nvinfer1::INetworkDefinition>(trt_builder->createNetworkV2(network_flags));
@@ -1280,12 +1281,13 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
   TensorrtLogger& trt_logger = GetTensorrtLogger(detailed_build_log_, logger_, &ort_api);
   auto trt_builder = GetBuilder(trt_logger);
   auto network_flags = 0;
-#if NV_TENSORRT_MAJOR > 8
+#if NV_TENSORRT_MAJOR <= 8
+  network_flags |= 1U << static_cast<uint32_t>(nvinfer1::NetworkDefinitionCreationFlag::kEXPLICIT_BATCH);
+#elif !((NV_TENSORRT_MAJOR == 11 && NV_TENSORRT_MINOR >= 1) || NV_TENSORRT_MAJOR > 11)
+  // kSTRONGLY_TYPED deprecated in TRT 11.1 (strongly typed mode is always enabled there)
   network_flags |= (fp16_enable_ || int8_enable_ || bf16_enable_)
                        ? 0
                        : 1U << static_cast<uint32_t>(nvinfer1::NetworkDefinitionCreationFlag::kSTRONGLY_TYPED);
-#else
-  network_flags |= 1U << static_cast<uint32_t>(nvinfer1::NetworkDefinitionCreationFlag::kEXPLICIT_BATCH);
 #endif
   auto trt_network = std::unique_ptr<nvinfer1::INetworkDefinition>(trt_builder->createNetworkV2(network_flags));
   auto trt_config = std::unique_ptr<nvinfer1::IBuilderConfig>(trt_builder->createBuilderConfig());
@@ -1296,7 +1298,10 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
     trt_config->setMemoryPoolLimit(nvinfer1::MemoryPoolType::kWORKSPACE, max_workspace_size_);
   }
 
-  // Force Pow + Reduce ops in layer norm to run in FP32 to avoid overflow
+  // Force Pow + Reduce ops in layer norm to run in FP32 to avoid overflow.
+  // setPrecision/setOutputType are removed in TRT 11 (strongly-typed networks); fp16/bf16 are
+  // forced false there, so this block only applies pre-11.
+#if NV_TENSORRT_MAJOR < 11
 #if defined(_MSC_VER)
 #pragma warning(push)
 #pragma warning(disable : 4996)
@@ -1322,6 +1327,7 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
 #if defined(_MSC_VER)
 #pragma warning(pop)
 #endif
+#endif  // NV_TENSORRT_MAJOR < 11
 
   int num_inputs = trt_network->getNbInputs();
   int num_outputs = trt_network->getNbOutputs();
@@ -1467,7 +1473,11 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
     trt_profiles.push_back(trt_builder->createOptimizationProfile());
   }
 
-  // Check platform availability for low precision
+  // Check platform availability for low precision.
+  // platformHasFastFp16 was removed in TRT 11; no #else needed because TRT 11's
+  // minimum GPU requirement (Volta, SM 7.0) exceeds the FP16 threshold (SM 5.3),
+  // so the check would always return true on any TRT 11-capable device.
+#if NV_TENSORRT_MAJOR < 11
   if (fp16_enable_ || bf16_enable_) {
 #if defined(_MSC_VER)
 #pragma warning(push)
@@ -1485,7 +1495,12 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
                                                       message.c_str(), ORT_FILE, __LINE__, __FUNCTION__));
     }
   }
+#endif
 
+  // platformHasFastInt8 was removed in TRT 11; no #else needed because TRT 11's
+  // minimum GPU requirement (Volta, SM 7.0) exceeds the INT8 threshold (SM 6.1),
+  // so the check would always return true on any TRT 11-capable device.
+#if NV_TENSORRT_MAJOR < 11
   if (int8_enable_) {
 #if defined(_MSC_VER)
 #pragma warning(push)
@@ -1502,6 +1517,7 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
                                                       message.c_str(), ORT_FILE, __LINE__, __FUNCTION__));
     }
   }
+#endif
 
   // Load INT8 calibration table
   std::unordered_map<std::string, float> dynamic_range_map;
@@ -1512,16 +1528,19 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
     }
   }
 
-#if defined(_MSC_VER)
-#pragma warning(push)
-#pragma warning(disable : 4996)
-#endif
   const char* name = nullptr;
   RETURN_IF_ERROR(ort_api.Node_GetName(fused_node, &name));
   std::string fused_node_name = name;
 
   // Set precision flags
   std::string trt_node_name_with_precision = fused_node_name;
+  // TRT 11 removed the standalone precision builder flags; networks are strongly-typed and the
+  // fp16/bf16/int8 enables are forced false at construction, so this block only applies pre-11.
+#if NV_TENSORRT_MAJOR < 11
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4996)
+#endif
   if (fp16_enable_) {
     trt_config->setFlag(nvinfer1::BuilderFlag::kFP16);
     trt_node_name_with_precision += "_fp16";
@@ -1551,6 +1570,7 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
 #if defined(_MSC_VER)
 #pragma warning(pop)
 #endif
+#endif  // NV_TENSORRT_MAJOR < 11
   // Set DLA
   if (fp16_enable_ || int8_enable_) {
     if (dla_enable_ && dla_core_ >= 0) {  // DLA can only run with FP16 and INT8
@@ -1805,6 +1825,10 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
           return ort_api.CreateStatus(ORT_EP_FAIL, err_msg.c_str());
         }
       } else {
+        // platformHasFastInt8 and setInt8Calibrator (implicit quantization) were removed in TRT 11.
+        // No #else needed: TRT 11's minimum GPU (Volta, SM 7.0) always has fast INT8 (SM 6.1+),
+        // and explicit quantization via SetDynamicRange is used instead of setInt8Calibrator.
+#if NV_TENSORRT_MAJOR < 11
 #if defined(_MSC_VER)
 #pragma warning(push)
 #pragma warning(disable : 4996)
@@ -1820,6 +1844,7 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
             return ort_api.CreateStatus(ORT_EP_FAIL, err_msg.c_str());
           }
         }
+#endif
 
         // Load timing cache from file. Create a fresh cache if the file doesn't exist
         std::unique_ptr<nvinfer1::ITimingCache> timing_cache = nullptr;
@@ -2740,6 +2765,21 @@ TensorrtExecutionProvider::TensorrtExecutionProvider(TensorrtExecutionProviderFa
     // deprecate env provider option
   }
 
+  // In TRT 11.0 the standalone precision flags (FP16 / BF16 / INT8) were removed; networks are
+  // strongly-typed and precision is driven by the ONNX graph. Force the flags false so the rest of
+  // the EP does not emit the deprecated builder flags. DLA still re-asserts FP16 locally (see below).
+#if NV_TENSORRT_MAJOR >= 11
+  if (fp16_enable_ || bf16_enable_ || int8_enable_) {
+    std::string message = "[TensorRT EP] Compiled for TensorRT >= 11.0 - precision flags (BF16 / FP16 / INT8) have been removed and no longer have an effect. Strongly-typed will be used for all networks.";
+    Ort::ThrowOnError(ort_api.Logger_LogMessage(&logger_,
+                                                OrtLoggingLevel::ORT_LOGGING_LEVEL_WARNING,
+                                                message.c_str(), ORT_FILE, __LINE__, __FUNCTION__));
+    fp16_enable_ = false;
+    bf16_enable_ = false;
+    int8_enable_ = false;
+  }
+#endif
+
   // Validate setting
   if (max_partition_iterations_ <= 0) {
     std::string message = "[TensorRT EP] TensorRT option trt_max_partition_iterations must be a positive integer value. Set it to 1000";
@@ -3217,6 +3257,10 @@ OrtStatus* TRTEpNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_ptr, void*
     for (auto trt_profile : trt_profiles) {
       trt_config->addOptimizationProfile(trt_profile);
     }
+    // platformHasFastInt8 and setInt8Calibrator (implicit quantization) were removed in TRT 11.
+    // No #else needed: TRT 11's minimum GPU (Volta, SM 7.0) always has fast INT8 (SM 6.1+),
+    // and explicit quantization via SetDynamicRange is used instead of setInt8Calibrator.
+#if NV_TENSORRT_MAJOR < 11
 #if defined(_MSC_VER)
 #pragma warning(push)
 #pragma warning(disable : 4996)
@@ -3232,11 +3276,14 @@ OrtStatus* TRTEpNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_ptr, void*
         return ep.ort_api.CreateStatus(ORT_EP_FAIL, err_msg.c_str());
       }
     }
+#endif
+    // Set precision flags. Removed in TRT 11 (strongly-typed networks); the enables are forced
+    // false at construction, so this only applies pre-11.
+#if NV_TENSORRT_MAJOR < 11
 #if defined(_MSC_VER)
 #pragma warning(push)
 #pragma warning(disable : 4996)
 #endif
-    // Set precision
     if (trt_state->int8_enable) {
       trt_config->setFlag(nvinfer1::BuilderFlag::kINT8);
       std::string message = "[TensorRT EP] INT8 mode is enabled";
@@ -3261,6 +3308,7 @@ OrtStatus* TRTEpNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_ptr, void*
 #if defined(_MSC_VER)
 #pragma warning(pop)
 #endif
+#endif  // NV_TENSORRT_MAJOR < 11
     // Set DLA (DLA can only run with FP16 or INT8)
     if ((trt_state->fp16_enable || trt_state->int8_enable) && trt_state->dla_enable) {
       std::string message = "[TensorRT EP] use DLA core " + trt_state->dla_core;
@@ -3591,6 +3639,9 @@ OrtStatus* TRTEpNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_ptr, void*
 
   // Set execution context memory
   if (trt_state->context_memory_sharing_enable) {
+#if NV_TENSORRT_MAJOR >= 11
+    size_t mem_size = trt_engine->getDeviceMemorySizeV2();
+#else
 #if defined(_MSC_VER)
 #pragma warning(push)
 #pragma warning(disable : 4996)
@@ -3598,6 +3649,7 @@ OrtStatus* TRTEpNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_ptr, void*
     size_t mem_size = trt_engine->getDeviceMemorySize();
 #if defined(_MSC_VER)
 #pragma warning(pop)
+#endif
 #endif
     if (mem_size > *max_context_mem_size_ptr) {
       *max_context_mem_size_ptr = mem_size;
@@ -3868,6 +3920,9 @@ OrtStatus* TRTEpEpContextNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_p
 
   // Set execution context memory
   if (trt_state->context_memory_sharing_enable) {
+#if NV_TENSORRT_MAJOR >= 11
+    size_t mem_size = trt_engine->getDeviceMemorySizeV2();
+#else
 #if defined(_MSC_VER)
 #pragma warning(push)
 #pragma warning(disable : 4996)
@@ -3875,6 +3930,7 @@ OrtStatus* TRTEpEpContextNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_p
     size_t mem_size = trt_engine->getDeviceMemorySize();
 #if defined(_MSC_VER)
 #pragma warning(pop)
+#endif
 #endif
     if (mem_size > *max_context_mem_size_ptr) {
       *max_context_mem_size_ptr = mem_size;

@@ -2304,7 +2304,8 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromPrecompiledEngine
       &max_ctx_mem_size_,
       &context_memory_,
       &tensorrt_mu_,
-      sync_stream_after_enqueue_};
+      sync_stream_after_enqueue_,
+      dla_enable_};
 
   ep->compute_states_for_ep_context_[fused_node_name] = std::move(compute_state);
 
@@ -3801,6 +3802,18 @@ OrtStatus* TRTEpNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_ptr, void*
     }
   }
 
+  // Unregister DLA tensor addresses so cuDLA releases its cudlaMemRegister
+  // hold on ORT's pooled buffers before the allocator recycles the VA.
+  // setTensorAddress(nullptr) must precede any cudaFree on these pointers.
+  if (trt_state->dla_enable) {
+    for (size_t i = 0, end = output_binding_names.size(); i < end; ++i) {
+      trt_context->setTensorAddress(output_binding_names[i], nullptr);
+    }
+    for (size_t i = 0, end = input_binding_names.size(); i < end; ++i) {
+      trt_context->setTensorAddress(input_binding_names[i], nullptr);
+    }
+  }
+
   // TODO: Add support for CUDA graph for plugin ep.
   /*
   // End CUDA graph capture.
@@ -4079,6 +4092,18 @@ OrtStatus* TRTEpEpContextNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_p
                                          output_dim_sizes[i]);
         }
       }
+    }
+  }
+
+  // Unregister DLA tensor addresses so cuDLA releases its cudlaMemRegister
+  // hold on ORT's pooled buffers before the allocator recycles the VA.
+  // setTensorAddress(nullptr) must precede any cudaFree on these pointers.
+  if (trt_state->dla_enable) {
+    for (size_t i = 0, end = output_binding_names.size(); i < end; ++i) {
+      trt_context->setTensorAddress(output_binding_names[i], nullptr);
+    }
+    for (size_t i = 0, end = input_binding_names.size(); i < end; ++i) {
+      trt_context->setTensorAddress(input_binding_names[i], nullptr);
     }
   }
 

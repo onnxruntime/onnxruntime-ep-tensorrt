@@ -180,6 +180,7 @@ struct TensorrtComputeStateForEPContext {
   AllocatorUniquePtr<void>* context_memory = nullptr;
   std::mutex* tensorrt_mu_ptr = nullptr;
   bool sync_stream_after_enqueue = true;
+  bool dla_enable = false;
 };
 
 using ShapeRangesMap = std::unordered_map<std::string, std::unordered_map<size_t, std::vector<std::vector<int64_t>>>>;

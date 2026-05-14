@@ -204,9 +204,18 @@ bool ApplyProfileShapesFromProviderOptions(std::vector<nvinfer1::IOptimizationPr
         input_explicit_shape_ranges[input_name][static_cast<int64_t>(j)][i].push_back(opt_value);
       }
 
+#if (NV_TENSORRT_MAJOR == 10 && NV_TENSORRT_MINOR > 10) || NV_TENSORRT_MAJOR > 10
+      std::vector<int64_t> shapes_min_64(shapes_min.begin(), shapes_min.end());
+      std::vector<int64_t> shapes_max_64(shapes_max.begin(), shapes_max.end());
+      std::vector<int64_t> shapes_opt_64(shapes_opt.begin(), shapes_opt.end());
+      trt_profile->setShapeValuesV2(input_name.c_str(), nvinfer1::OptProfileSelector::kMIN, &shapes_min_64[0], shape_size);
+      trt_profile->setShapeValuesV2(input_name.c_str(), nvinfer1::OptProfileSelector::kMAX, &shapes_max_64[0], shape_size);
+      trt_profile->setShapeValuesV2(input_name.c_str(), nvinfer1::OptProfileSelector::kOPT, &shapes_opt_64[0], shape_size);
+#else
       trt_profile->setShapeValues(input_name.c_str(), nvinfer1::OptProfileSelector::kMIN, &shapes_min[0], shape_size);
       trt_profile->setShapeValues(input_name.c_str(), nvinfer1::OptProfileSelector::kMAX, &shapes_max[0], shape_size);
       trt_profile->setShapeValues(input_name.c_str(), nvinfer1::OptProfileSelector::kOPT, &shapes_opt[0], shape_size);
+#endif
     }
     // Execution tensor
     else {
@@ -291,6 +300,17 @@ OrtStatusPtr ApplyProfileShapesFromInputTensorValue(std::vector<nvinfer1::IOptim
       if (input->isShapeTensor()) {
         // shape tensor
         int shape_size = nb_dims == 0 ? 1 : static_cast<int>(tensor_shapes[0]);
+#if (NV_TENSORRT_MAJOR == 10 && NV_TENSORRT_MINOR > 10) || NV_TENSORRT_MAJOR > 10
+        std::vector<int64_t> shapes_min(shape_size), shapes_opt(shape_size), shapes_max(shape_size);
+        for (int j = 0; j < shape_size; j++) {
+          shapes_min[j] = *(trt_profiles[0]->getShapeValuesV2(input_name.c_str(), nvinfer1::OptProfileSelector::kMIN));
+          shapes_max[j] = *(trt_profiles[0]->getShapeValuesV2(input_name.c_str(), nvinfer1::OptProfileSelector::kMAX));
+          shapes_opt[j] = *(trt_profiles[0]->getShapeValuesV2(input_name.c_str(), nvinfer1::OptProfileSelector::kOPT));
+        }
+        trt_profile->setShapeValuesV2(input_name.c_str(), nvinfer1::OptProfileSelector::kMIN, &shapes_min[0], shape_size);
+        trt_profile->setShapeValuesV2(input_name.c_str(), nvinfer1::OptProfileSelector::kMAX, &shapes_max[0], shape_size);
+        trt_profile->setShapeValuesV2(input_name.c_str(), nvinfer1::OptProfileSelector::kOPT, &shapes_opt[0], shape_size);
+#else
         std::vector<int32_t> shapes_min(shape_size), shapes_opt(shape_size), shapes_max(shape_size);
         for (int j = 0; j < shape_size; j++) {
           shapes_min[j] = *(trt_profiles[0]->getShapeValues(input_name.c_str(), nvinfer1::OptProfileSelector::kMIN));
@@ -300,6 +320,7 @@ OrtStatusPtr ApplyProfileShapesFromInputTensorValue(std::vector<nvinfer1::IOptim
         trt_profile->setShapeValues(input_name.c_str(), nvinfer1::OptProfileSelector::kMIN, &shapes_min[0], shape_size);
         trt_profile->setShapeValues(input_name.c_str(), nvinfer1::OptProfileSelector::kMAX, &shapes_max[0], shape_size);
         trt_profile->setShapeValues(input_name.c_str(), nvinfer1::OptProfileSelector::kOPT, &shapes_opt[0], shape_size);
+#endif
       } else {
         // execution tensor
         nvinfer1::Dims dims_min, dims_opt, dims_max;
@@ -391,9 +412,18 @@ OrtStatusPtr ApplyProfileShapesFromInputTensorValue(std::vector<nvinfer1::IOptim
         *engine_update = true;
       }
 
+#if (NV_TENSORRT_MAJOR == 10 && NV_TENSORRT_MINOR > 10) || NV_TENSORRT_MAJOR > 10
+      std::vector<int64_t> shapes_min_64(shapes_min.begin(), shapes_min.end());
+      std::vector<int64_t> shapes_max_64(shapes_max.begin(), shapes_max.end());
+      std::vector<int64_t> shapes_opt_64(shapes_opt.begin(), shapes_opt.end());
+      trt_profile->setShapeValuesV2(input_name.c_str(), nvinfer1::OptProfileSelector::kMIN, &shapes_min_64[0], shape_size);
+      trt_profile->setShapeValuesV2(input_name.c_str(), nvinfer1::OptProfileSelector::kMAX, &shapes_max_64[0], shape_size);
+      trt_profile->setShapeValuesV2(input_name.c_str(), nvinfer1::OptProfileSelector::kOPT, &shapes_opt_64[0], shape_size);
+#else
       trt_profile->setShapeValues(input_name.c_str(), nvinfer1::OptProfileSelector::kMIN, &shapes_min[0], shape_size);
       trt_profile->setShapeValues(input_name.c_str(), nvinfer1::OptProfileSelector::kMAX, &shapes_max[0], shape_size);
       trt_profile->setShapeValues(input_name.c_str(), nvinfer1::OptProfileSelector::kOPT, &shapes_opt[0], shape_size);
+#endif
     } else {  // Execution tensor
       nvinfer1::Dims dims_min(dims), dims_opt(dims), dims_max(dims);
       for (int j = 0, end = nb_dims; j < end; ++j) {
@@ -807,6 +837,28 @@ bool TensorrtExecutionProvider::IsSubGraphFullySupported(const OrtGraph* graph, 
   return number_of_trt_nodes == num_nodes;
 }
 
+nvonnxparser::OnnxParserFlags TensorrtExecutionProvider::ComputeParserFlags() const {
+  nvonnxparser::OnnxParserFlags parser_flags = 0;
+  if (dla_enable_) {
+    // kNATIVE_INSTANCENORM is always enabled in DLA mode (no session-option toggle).
+    parser_flags |=
+        1U << static_cast<uint32_t>(nvonnxparser::OnnxParserFlag::kNATIVE_INSTANCENORM);
+#if (NV_TENSORRT_MAJOR == 10 && NV_TENSORRT_MINOR >= 11) || NV_TENSORRT_MAJOR > 10
+    if (dla_enable_uint8_asymmetric_quantization_) {
+      parser_flags |= 1U << static_cast<uint32_t>(
+                          nvonnxparser::OnnxParserFlag::kENABLE_UINT8_AND_ASYMMETRIC_QUANTIZATION_DLA);
+    }
+#endif
+#if (NV_TENSORRT_MAJOR == 10 && NV_TENSORRT_MINOR >= 16) || NV_TENSORRT_MAJOR > 10
+    if (dla_adjust_for_dla_) {
+      parser_flags |=
+          1U << static_cast<uint32_t>(nvonnxparser::OnnxParserFlag::kADJUST_FOR_DLA);
+    }
+#endif
+  }
+  return parser_flags;
+}
+
 SubGraphCollection_t TensorrtExecutionProvider::GetSupportedList(SubGraphCollection_t nodes_vector_input,
                                                                  int iterations, const int max_iterations,
                                                                  const OrtGraph* graph, bool* early_termination) const {
@@ -903,6 +955,7 @@ SubGraphCollection_t TensorrtExecutionProvider::GetSupportedList(SubGraphCollect
         auto trt_network = std::unique_ptr<nvinfer1::INetworkDefinition>(trt_builder->createNetworkV2(network_flags));
         auto trt_parser =
             tensorrt_ptr::unique_pointer<nvonnxparser::IParser>(nvonnxparser::createParser(*trt_network, trt_logger));
+        trt_parser->setFlags(ComputeParserFlags());
         bool is_model_supported = false;
 
 #if (NV_TENSORRT_MAJOR == 10 && NV_TENSORRT_MINOR > 1) || NV_TENSORRT_MAJOR > 10
@@ -1293,6 +1346,7 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
   auto trt_config = std::unique_ptr<nvinfer1::IBuilderConfig>(trt_builder->createBuilderConfig());
   auto trt_parser =
       tensorrt_ptr::unique_pointer<nvonnxparser::IParser>(nvonnxparser::createParser(*trt_network, trt_logger));
+  trt_parser->setFlags(ComputeParserFlags());
   trt_parser->parse(string_buf.data(), string_buf.size(), model_path_);
   if (max_workspace_size_ > 0) {
     trt_config->setMemoryPoolLimit(nvinfer1::MemoryPoolType::kWORKSPACE, max_workspace_size_);
@@ -1595,7 +1649,9 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
         Ort::ThrowOnError(ep->ort_api.Logger_LogMessage(&ep->logger_,
                                                         OrtLoggingLevel::ORT_LOGGING_LEVEL_VERBOSE,
                                                         message.c_str(), ORT_FILE, __LINE__, __FUNCTION__));
-        trt_config->setFlag(nvinfer1::BuilderFlag::kGPU_FALLBACK);
+        if (dla_gpu_fallback_enable_) {
+          trt_config->setFlag(nvinfer1::BuilderFlag::kGPU_FALLBACK);
+        }
         trt_config->setDefaultDeviceType(nvinfer1::DeviceType::kDLA);
         trt_config->setDLACore(dla_core_);
         trt_node_name_with_precision += "_dlacore" + std::to_string(dla_core_);
@@ -2083,6 +2139,7 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
       int8_calibration_cache_available_,
       dla_enable_,
       dla_core_,
+      dla_gpu_fallback_enable_,
       trt_node_name_with_precision,
       engine_cache_enable_,
       cache_path_,
@@ -2713,6 +2770,9 @@ TensorrtExecutionProvider::TensorrtExecutionProvider(TensorrtExecutionProviderFa
     if (fp16_enable_ || int8_enable_) {  // DLA can only be enabled with FP16 or INT8
       dla_enable_ = info_.dla_enable;
       dla_core_ = info_.dla_core;
+      dla_gpu_fallback_enable_ = info_.dla_gpu_fallback_enable;
+      dla_enable_uint8_asymmetric_quantization_ = info_.dla_enable_uint8_asymmetric_quantization;
+      dla_adjust_for_dla_ = info_.dla_adjust_for_dla;
     }
     dump_subgraphs_ = info_.dump_subgraphs;
     engine_cache_enable_ = info_.engine_cache_enable;
@@ -3315,7 +3375,9 @@ OrtStatus* TRTEpNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_ptr, void*
       Ort::ThrowOnError(ep.ort_api.Logger_LogMessage(&ep.logger_,
                                                      OrtLoggingLevel::ORT_LOGGING_LEVEL_VERBOSE,
                                                      message.c_str(), ORT_FILE, __LINE__, __FUNCTION__));
-      trt_config->setFlag(nvinfer1::BuilderFlag::kGPU_FALLBACK);
+      if (trt_state->dla_gpu_fallback_enable) {
+        trt_config->setFlag(nvinfer1::BuilderFlag::kGPU_FALLBACK);
+      }
       trt_config->setDefaultDeviceType(nvinfer1::DeviceType::kDLA);
       trt_config->setDLACore(trt_state->dla_core);
     }

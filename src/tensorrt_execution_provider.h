@@ -129,6 +129,7 @@ struct TensorrtComputeState {
   bool int8_calibration_cache_available = false;
   bool dla_enable = false;
   int dla_core = 0;
+  bool dla_gpu_fallback_enable = false;
   std::string trt_node_name_with_precision;
   bool engine_cache_enable = false;
   std::string engine_cache_path;
@@ -275,6 +276,8 @@ struct TensorrtExecutionProvider : public OrtEp, public ApiPtrs {
     _In_ OrtEp* this_ptr,
     _Outptr_result_maybenull_ const OrtKernelRegistry** kernel_registry) noexcept;
 
+  nvonnxparser::OnnxParserFlags ComputeParserFlags() const;
+
   mutable TensorrtExecutionProviderInfo info_;
   int max_partition_iterations_ = 1000;
   size_t min_subgraph_size_ = 1;
@@ -284,6 +287,9 @@ struct TensorrtExecutionProvider : public OrtEp, public ApiPtrs {
   bool bf16_enable_ = false;
   bool dla_enable_ = false;
   int dla_core_ = 0;
+  bool dla_gpu_fallback_enable_ = false;
+  bool dla_enable_uint8_asymmetric_quantization_ = false;
+  bool dla_adjust_for_dla_ = false;
   bool force_sequential_engine_build_ = false;
   std::string int8_calibration_cache_name_;
   bool int8_calibration_cache_available_ = false;

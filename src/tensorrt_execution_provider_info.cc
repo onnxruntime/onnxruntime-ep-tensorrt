@@ -4,6 +4,7 @@
 #include <cuda_runtime.h>  //#incldue "core/providers/cuda/cuda_pch.h"
 
 #include "tensorrt_execution_provider_info.h"
+#include "nv_includes.h"  // for NV_TENSORRT_MAJOR/MINOR used in version-availability checks below
 #include "utils/provider_options_utils.h"
 #include "utils/cuda/cuda_common.h"
 #include "utils/ep_utils.h"
@@ -23,6 +24,9 @@ constexpr const char* kInt8CalibTable = "trt_int8_calibration_table_name";
 constexpr const char* kInt8UseNativeCalibTable = "trt_int8_use_native_calibration_table";
 constexpr const char* kDLAEnable = "trt_dla_enable";
 constexpr const char* kDLACore = "trt_dla_core";
+constexpr const char* kDLAGpuFallbackEnable = "trt_dla_gpu_fallback_enable";
+constexpr const char* kDLAEnableUint8AsymmetricQuantization = "trt_dla_enable_uint8_asymmetric_quantization";
+constexpr const char* kDLAAdjustForDLA = "trt_dla_adjust_for_dla";
 constexpr const char* kDumpSubgraphs = "trt_dump_subgraphs";
 constexpr const char* kEngineCacheEnable = "trt_engine_cache_enable";
 constexpr const char* kEngineCachePath = "trt_engine_cache_path";
@@ -101,6 +105,9 @@ TensorrtExecutionProviderInfo TensorrtExecutionProviderInfo::FromProviderOptions
           .AddAssignmentToReference(tensorrt::provider_option_names::kInt8UseNativeCalibTable, info.int8_use_native_calibration_table)
           .AddAssignmentToReference(tensorrt::provider_option_names::kDLAEnable, info.dla_enable)
           .AddAssignmentToReference(tensorrt::provider_option_names::kDLACore, info.dla_core)
+          .AddAssignmentToReference(tensorrt::provider_option_names::kDLAGpuFallbackEnable, info.dla_gpu_fallback_enable)
+          .AddAssignmentToReference(tensorrt::provider_option_names::kDLAEnableUint8AsymmetricQuantization, info.dla_enable_uint8_asymmetric_quantization)
+          .AddAssignmentToReference(tensorrt::provider_option_names::kDLAAdjustForDLA, info.dla_adjust_for_dla)
           .AddAssignmentToReference(tensorrt::provider_option_names::kDumpSubgraphs, info.dump_subgraphs)
           .AddAssignmentToReference(tensorrt::provider_option_names::kEngineCacheEnable, info.engine_cache_enable)
           .AddAssignmentToReference(tensorrt::provider_option_names::kEngineCachePath, info.engine_cache_path)
@@ -150,6 +157,19 @@ TensorrtExecutionProviderInfo TensorrtExecutionProviderInfo::FromProviderOptions
           .AddAssignmentToReference(tensorrt::provider_option_names::kExternalDataBytestreamSize, info.external_data_bytestream_size)
           .AddAssignmentToReference(tensorrt::provider_option_names::kOpTypesToExclude, info.op_types_to_exclude)
           .Parse(options));  // add new provider option here.
+
+#if !((NV_TENSORRT_MAJOR == 10 && NV_TENSORRT_MINOR >= 11) || NV_TENSORRT_MAJOR > 10)
+  if (info.dla_enable_uint8_asymmetric_quantization) {
+    throw std::runtime_error(
+        "trt_dla_enable_uint8_asymmetric_quantization=true requires TensorRT 10.11 or later");
+  }
+#endif
+#if !((NV_TENSORRT_MAJOR == 10 && NV_TENSORRT_MINOR >= 16) || NV_TENSORRT_MAJOR > 10)
+  if (info.dla_adjust_for_dla) {
+    throw std::runtime_error(
+        "trt_dla_adjust_for_dla=true requires TensorRT 10.16 or later");
+  }
+#endif
 
   info.user_compute_stream = user_compute_stream;
   info.has_user_compute_stream = (user_compute_stream != nullptr);

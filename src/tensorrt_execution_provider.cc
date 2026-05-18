@@ -943,13 +943,12 @@ SubGraphCollection_t TensorrtExecutionProvider::GetSupportedList(SubGraphCollect
         TensorrtLogger& trt_logger = GetTensorrtLogger(detailed_build_log_, logger_, &ort_api);
         auto trt_builder = GetBuilder(trt_logger);
         auto network_flags = 0;
-#if NV_TENSORRT_MAJOR <= 8
+#if NV_TENSORRT_VERSION >= 11
+        network_flags |= 0;
+#elif NV_TENSORRT_MAJOR > 8
+        network_flags |= (fp16_enable_ || int8_enable_ || bf16_enable_) ? 0 : 1U << static_cast<uint32_t>(nvinfer1::NetworkDefinitionCreationFlag::kSTRONGLY_TYPED);
+#else
         network_flags |= 1U << static_cast<uint32_t>(nvinfer1::NetworkDefinitionCreationFlag::kEXPLICIT_BATCH);
-#elif !((NV_TENSORRT_MAJOR == 11 && NV_TENSORRT_MINOR >= 1) || NV_TENSORRT_MAJOR > 11)
-        // kSTRONGLY_TYPED deprecated in TRT 11.1 (strongly typed mode is always enabled there)
-        network_flags |= (fp16_enable_ || int8_enable_ || bf16_enable_)
-                             ? 0
-                             : 1U << static_cast<uint32_t>(nvinfer1::NetworkDefinitionCreationFlag::kSTRONGLY_TYPED);
 #endif
 
         auto trt_network = std::unique_ptr<nvinfer1::INetworkDefinition>(trt_builder->createNetworkV2(network_flags));
@@ -1334,13 +1333,12 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
   TensorrtLogger& trt_logger = GetTensorrtLogger(detailed_build_log_, logger_, &ort_api);
   auto trt_builder = GetBuilder(trt_logger);
   auto network_flags = 0;
-#if NV_TENSORRT_MAJOR <= 8
-  network_flags |= 1U << static_cast<uint32_t>(nvinfer1::NetworkDefinitionCreationFlag::kEXPLICIT_BATCH);
-#elif !((NV_TENSORRT_MAJOR == 11 && NV_TENSORRT_MINOR >= 1) || NV_TENSORRT_MAJOR > 11)
-  // kSTRONGLY_TYPED deprecated in TRT 11.1 (strongly typed mode is always enabled there)
-  network_flags |= (fp16_enable_ || int8_enable_ || bf16_enable_)
-                       ? 0
-                       : 1U << static_cast<uint32_t>(nvinfer1::NetworkDefinitionCreationFlag::kSTRONGLY_TYPED);
+#if NV_TENSORRT_VERSION >= 11
+        network_flags |= 0;
+#elif NV_TENSORRT_MAJOR > 8
+        network_flags |= (fp16_enable_ || int8_enable_ || bf16_enable_) ? 0 : 1U << static_cast<uint32_t>(nvinfer1::NetworkDefinitionCreationFlag::kSTRONGLY_TYPED);
+#else
+        network_flags |= 1U << static_cast<uint32_t>(nvinfer1::NetworkDefinitionCreationFlag::kEXPLICIT_BATCH);
 #endif
   auto trt_network = std::unique_ptr<nvinfer1::INetworkDefinition>(trt_builder->createNetworkV2(network_flags));
   auto trt_config = std::unique_ptr<nvinfer1::IBuilderConfig>(trt_builder->createBuilderConfig());
@@ -1626,7 +1624,13 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
 #endif
 #endif  // NV_TENSORRT_MAJOR < 11
   // Set DLA
+  // TRT 11 removed the standalone precision flags (forced false at construction), so gate DLA on
+  // dla_enable_ rather than fp16/int8; pre-11 keeps the original FP16/INT8 gate.
+#if NV_TENSORRT_MAJOR >= 11
+  if (dla_enable_) {
+#else
   if (fp16_enable_ || int8_enable_) {
+#endif
     if (dla_enable_ && dla_core_ >= 0) {  // DLA can only run with FP16 and INT8
       int number_of_dla_core = trt_builder->getNbDLACores();
       if (number_of_dla_core == 0) {
@@ -1645,7 +1649,7 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
                                                           message.c_str(), ORT_FILE, __LINE__, __FUNCTION__));
           dla_core_ = 0;
         }
-        std::string message = "[TensorRT EP] use DLA core " + dla_core_;
+        std::string message = "[TensorRT EP] use DLA core " + std::to_string(dla_core_);
         Ort::ThrowOnError(ep->ort_api.Logger_LogMessage(&ep->logger_,
                                                         OrtLoggingLevel::ORT_LOGGING_LEVEL_VERBOSE,
                                                         message.c_str(), ORT_FILE, __LINE__, __FUNCTION__));
@@ -1654,6 +1658,20 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
         }
         trt_config->setDefaultDeviceType(nvinfer1::DeviceType::kDLA);
         trt_config->setDLACore(dla_core_);
+#if NV_TENSORRT_MAJOR >= 11
+        // DLA + explicit-QDQ requires FP16 mode on the builder config; kFP16 is deprecated in
+        // TRT 11 but still functional and required here (setDLABackend asserts otherwise).
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4996)
+#endif
+        trt_config->setFlag(nvinfer1::BuilderFlag::kFP16);
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
+#endif
+        trt_config->setMemoryPoolLimit(nvinfer1::MemoryPoolType::kDLA_GLOBAL_DRAM, dla_mem_pool_limit_);
+        trt_config->setMemoryPoolLimit(nvinfer1::MemoryPoolType::kDLA_LOCAL_DRAM, dla_mem_pool_limit_);
         trt_node_name_with_precision += "_dlacore" + std::to_string(dla_core_);
       }
     }
@@ -2139,6 +2157,7 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
       int8_calibration_cache_available_,
       dla_enable_,
       dla_core_,
+      dla_mem_pool_limit_,
       dla_gpu_fallback_enable_,
       trt_node_name_with_precision,
       engine_cache_enable_,
@@ -2771,6 +2790,7 @@ TensorrtExecutionProvider::TensorrtExecutionProvider(TensorrtExecutionProviderFa
     if (fp16_enable_ || int8_enable_) {  // DLA can only be enabled with FP16 or INT8
       dla_enable_ = info_.dla_enable;
       dla_core_ = info_.dla_core;
+      dla_mem_pool_limit_ = info_.dla_mem_pool_limit;
       dla_gpu_fallback_enable_ = info_.dla_gpu_fallback_enable;
       dla_enable_uint8_asymmetric_quantization_ = info_.dla_enable_uint8_asymmetric_quantization;
       dla_adjust_for_dla_ = info_.dla_adjust_for_dla;
@@ -3371,8 +3391,13 @@ OrtStatus* TRTEpNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_ptr, void*
 #endif
 #endif  // NV_TENSORRT_MAJOR < 11
     // Set DLA (DLA can only run with FP16 or INT8)
+    // TRT 11 removed the standalone precision flags; gate DLA on dla_enable alone.
+#if NV_TENSORRT_MAJOR >= 11
+    if (trt_state->dla_enable) {
+#else
     if ((trt_state->fp16_enable || trt_state->int8_enable) && trt_state->dla_enable) {
-      std::string message = "[TensorRT EP] use DLA core " + trt_state->dla_core;
+#endif
+      std::string message = "[TensorRT EP] use DLA core " + std::to_string(trt_state->dla_core);
       Ort::ThrowOnError(ep.ort_api.Logger_LogMessage(&ep.logger_,
                                                      OrtLoggingLevel::ORT_LOGGING_LEVEL_VERBOSE,
                                                      message.c_str(), ORT_FILE, __LINE__, __FUNCTION__));
@@ -3381,6 +3406,19 @@ OrtStatus* TRTEpNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_ptr, void*
       }
       trt_config->setDefaultDeviceType(nvinfer1::DeviceType::kDLA);
       trt_config->setDLACore(trt_state->dla_core);
+#if NV_TENSORRT_MAJOR >= 11
+      // DLA + explicit-QDQ requires FP16 mode (kFP16 deprecated but functional).
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4996)
+#endif
+      trt_config->setFlag(nvinfer1::BuilderFlag::kFP16);
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
+#endif
+      trt_config->setMemoryPoolLimit(nvinfer1::MemoryPoolType::kDLA_GLOBAL_DRAM, trt_state->dla_mem_pool_limit);
+      trt_config->setMemoryPoolLimit(nvinfer1::MemoryPoolType::kDLA_LOCAL_DRAM, trt_state->dla_mem_pool_limit);
     }
 
     // enable sparse weights

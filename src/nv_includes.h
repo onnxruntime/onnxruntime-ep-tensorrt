@@ -20,7 +20,7 @@
 
 // SubGraph_t and SubGraphCollection_t were removed from NvOnnxParser.h in TRT 11.1.
 // Define them here so ORT's internal subgraph tracking still compiles.
-#if (NV_TENSORRT_MAJOR == 11 && NV_TENSORRT_MINOR >= 1) || NV_TENSORRT_MAJOR > 11
+#if NV_TENSORRT_MAJOR >= 11
 #include <utility>
 #include <vector>
 using SubGraph_t = std::pair<std::vector<size_t>, bool>;

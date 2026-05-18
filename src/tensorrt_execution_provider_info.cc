@@ -24,6 +24,7 @@ constexpr const char* kInt8CalibTable = "trt_int8_calibration_table_name";
 constexpr const char* kInt8UseNativeCalibTable = "trt_int8_use_native_calibration_table";
 constexpr const char* kDLAEnable = "trt_dla_enable";
 constexpr const char* kDLACore = "trt_dla_core";
+constexpr const char* kDLAMemPoolLimit = "trt_dla_mem_pool_limit";
 constexpr const char* kDLAGpuFallbackEnable = "trt_dla_gpu_fallback_enable";
 constexpr const char* kDLAEnableUint8AsymmetricQuantization = "trt_dla_enable_uint8_asymmetric_quantization";
 constexpr const char* kDLAAdjustForDLA = "trt_dla_adjust_for_dla";
@@ -105,6 +106,7 @@ TensorrtExecutionProviderInfo TensorrtExecutionProviderInfo::FromProviderOptions
           .AddAssignmentToReference(tensorrt::provider_option_names::kInt8UseNativeCalibTable, info.int8_use_native_calibration_table)
           .AddAssignmentToReference(tensorrt::provider_option_names::kDLAEnable, info.dla_enable)
           .AddAssignmentToReference(tensorrt::provider_option_names::kDLACore, info.dla_core)
+          .AddAssignmentToReference(tensorrt::provider_option_names::kDLAMemPoolLimit, info.dla_mem_pool_limit)
           .AddAssignmentToReference(tensorrt::provider_option_names::kDLAGpuFallbackEnable, info.dla_gpu_fallback_enable)
           .AddAssignmentToReference(tensorrt::provider_option_names::kDLAEnableUint8AsymmetricQuantization, info.dla_enable_uint8_asymmetric_quantization)
           .AddAssignmentToReference(tensorrt::provider_option_names::kDLAAdjustForDLA, info.dla_adjust_for_dla)
@@ -170,6 +172,18 @@ TensorrtExecutionProviderInfo TensorrtExecutionProviderInfo::FromProviderOptions
         "trt_dla_adjust_for_dla=true requires TensorRT 10.16 or later");
   }
 #endif
+
+  if (!info.dla_enable) {
+    if (info.dla_gpu_fallback_enable) {
+      throw std::runtime_error("trt_dla_gpu_fallback_enable=true requires trt_dla_enable=true");
+    }
+    if (info.dla_enable_uint8_asymmetric_quantization) {
+      throw std::runtime_error("trt_dla_enable_uint8_asymmetric_quantization=true requires trt_dla_enable=true");
+    }
+    if (info.dla_adjust_for_dla) {
+      throw std::runtime_error("trt_dla_adjust_for_dla=true requires trt_dla_enable=true");
+    }
+  }
 
   info.user_compute_stream = user_compute_stream;
   info.has_user_compute_stream = (user_compute_stream != nullptr);

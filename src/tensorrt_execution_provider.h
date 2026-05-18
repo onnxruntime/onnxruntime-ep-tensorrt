@@ -129,6 +129,7 @@ struct TensorrtComputeState {
   bool int8_calibration_cache_available = false;
   bool dla_enable = false;
   int dla_core = 0;
+  size_t dla_mem_pool_limit = 4ULL << 30;
   bool dla_gpu_fallback_enable = false;
   std::string trt_node_name_with_precision;
   bool engine_cache_enable = false;
@@ -288,6 +289,7 @@ struct TensorrtExecutionProvider : public OrtEp, public ApiPtrs {
   bool bf16_enable_ = false;
   bool dla_enable_ = false;
   int dla_core_ = 0;
+  size_t dla_mem_pool_limit_ = 4ULL << 30;
   bool dla_gpu_fallback_enable_ = false;
   bool dla_enable_uint8_asymmetric_quantization_ = false;
   bool dla_adjust_for_dla_ = false;

@@ -204,9 +204,18 @@ bool ApplyProfileShapesFromProviderOptions(std::vector<nvinfer1::IOptimizationPr
         input_explicit_shape_ranges[input_name][static_cast<int64_t>(j)][i].push_back(opt_value);
       }
 
+#if (NV_TENSORRT_MAJOR == 10 && NV_TENSORRT_MINOR > 10) || NV_TENSORRT_MAJOR > 10
+      std::vector<int64_t> shapes_min_64(shapes_min.begin(), shapes_min.end());
+      std::vector<int64_t> shapes_max_64(shapes_max.begin(), shapes_max.end());
+      std::vector<int64_t> shapes_opt_64(shapes_opt.begin(), shapes_opt.end());
+      trt_profile->setShapeValuesV2(input_name.c_str(), nvinfer1::OptProfileSelector::kMIN, &shapes_min_64[0], shape_size);
+      trt_profile->setShapeValuesV2(input_name.c_str(), nvinfer1::OptProfileSelector::kMAX, &shapes_max_64[0], shape_size);
+      trt_profile->setShapeValuesV2(input_name.c_str(), nvinfer1::OptProfileSelector::kOPT, &shapes_opt_64[0], shape_size);
+#else
       trt_profile->setShapeValues(input_name.c_str(), nvinfer1::OptProfileSelector::kMIN, &shapes_min[0], shape_size);
       trt_profile->setShapeValues(input_name.c_str(), nvinfer1::OptProfileSelector::kMAX, &shapes_max[0], shape_size);
       trt_profile->setShapeValues(input_name.c_str(), nvinfer1::OptProfileSelector::kOPT, &shapes_opt[0], shape_size);
+#endif
     }
     // Execution tensor
     else {
@@ -291,6 +300,17 @@ OrtStatusPtr ApplyProfileShapesFromInputTensorValue(std::vector<nvinfer1::IOptim
       if (input->isShapeTensor()) {
         // shape tensor
         int shape_size = nb_dims == 0 ? 1 : static_cast<int>(tensor_shapes[0]);
+#if (NV_TENSORRT_MAJOR == 10 && NV_TENSORRT_MINOR > 10) || NV_TENSORRT_MAJOR > 10
+        std::vector<int64_t> shapes_min(shape_size), shapes_opt(shape_size), shapes_max(shape_size);
+        for (int j = 0; j < shape_size; j++) {
+          shapes_min[j] = *(trt_profiles[0]->getShapeValuesV2(input_name.c_str(), nvinfer1::OptProfileSelector::kMIN));
+          shapes_max[j] = *(trt_profiles[0]->getShapeValuesV2(input_name.c_str(), nvinfer1::OptProfileSelector::kMAX));
+          shapes_opt[j] = *(trt_profiles[0]->getShapeValuesV2(input_name.c_str(), nvinfer1::OptProfileSelector::kOPT));
+        }
+        trt_profile->setShapeValuesV2(input_name.c_str(), nvinfer1::OptProfileSelector::kMIN, &shapes_min[0], shape_size);
+        trt_profile->setShapeValuesV2(input_name.c_str(), nvinfer1::OptProfileSelector::kMAX, &shapes_max[0], shape_size);
+        trt_profile->setShapeValuesV2(input_name.c_str(), nvinfer1::OptProfileSelector::kOPT, &shapes_opt[0], shape_size);
+#else
         std::vector<int32_t> shapes_min(shape_size), shapes_opt(shape_size), shapes_max(shape_size);
         for (int j = 0; j < shape_size; j++) {
           shapes_min[j] = *(trt_profiles[0]->getShapeValues(input_name.c_str(), nvinfer1::OptProfileSelector::kMIN));
@@ -300,6 +320,7 @@ OrtStatusPtr ApplyProfileShapesFromInputTensorValue(std::vector<nvinfer1::IOptim
         trt_profile->setShapeValues(input_name.c_str(), nvinfer1::OptProfileSelector::kMIN, &shapes_min[0], shape_size);
         trt_profile->setShapeValues(input_name.c_str(), nvinfer1::OptProfileSelector::kMAX, &shapes_max[0], shape_size);
         trt_profile->setShapeValues(input_name.c_str(), nvinfer1::OptProfileSelector::kOPT, &shapes_opt[0], shape_size);
+#endif
       } else {
         // execution tensor
         nvinfer1::Dims dims_min, dims_opt, dims_max;
@@ -391,9 +412,18 @@ OrtStatusPtr ApplyProfileShapesFromInputTensorValue(std::vector<nvinfer1::IOptim
         *engine_update = true;
       }
 
+#if (NV_TENSORRT_MAJOR == 10 && NV_TENSORRT_MINOR > 10) || NV_TENSORRT_MAJOR > 10
+      std::vector<int64_t> shapes_min_64(shapes_min.begin(), shapes_min.end());
+      std::vector<int64_t> shapes_max_64(shapes_max.begin(), shapes_max.end());
+      std::vector<int64_t> shapes_opt_64(shapes_opt.begin(), shapes_opt.end());
+      trt_profile->setShapeValuesV2(input_name.c_str(), nvinfer1::OptProfileSelector::kMIN, &shapes_min_64[0], shape_size);
+      trt_profile->setShapeValuesV2(input_name.c_str(), nvinfer1::OptProfileSelector::kMAX, &shapes_max_64[0], shape_size);
+      trt_profile->setShapeValuesV2(input_name.c_str(), nvinfer1::OptProfileSelector::kOPT, &shapes_opt_64[0], shape_size);
+#else
       trt_profile->setShapeValues(input_name.c_str(), nvinfer1::OptProfileSelector::kMIN, &shapes_min[0], shape_size);
       trt_profile->setShapeValues(input_name.c_str(), nvinfer1::OptProfileSelector::kMAX, &shapes_max[0], shape_size);
       trt_profile->setShapeValues(input_name.c_str(), nvinfer1::OptProfileSelector::kOPT, &shapes_opt[0], shape_size);
+#endif
     } else {  // Execution tensor
       nvinfer1::Dims dims_min(dims), dims_opt(dims), dims_max(dims);
       for (int j = 0, end = nb_dims; j < end; ++j) {
@@ -807,6 +837,28 @@ bool TensorrtExecutionProvider::IsSubGraphFullySupported(const OrtGraph* graph, 
   return number_of_trt_nodes == num_nodes;
 }
 
+nvonnxparser::OnnxParserFlags TensorrtExecutionProvider::ComputeParserFlags() const {
+  nvonnxparser::OnnxParserFlags parser_flags = 0;
+  if (dla_enable_) {
+    // kNATIVE_INSTANCENORM is always enabled in DLA mode (no session-option toggle).
+    parser_flags |=
+        1U << static_cast<uint32_t>(nvonnxparser::OnnxParserFlag::kNATIVE_INSTANCENORM);
+#if (NV_TENSORRT_MAJOR == 10 && NV_TENSORRT_MINOR >= 11) || NV_TENSORRT_MAJOR > 10
+    if (dla_enable_uint8_asymmetric_quantization_) {
+      parser_flags |= 1U << static_cast<uint32_t>(
+                          nvonnxparser::OnnxParserFlag::kENABLE_UINT8_AND_ASYMMETRIC_QUANTIZATION_DLA);
+    }
+#endif
+#if (NV_TENSORRT_MAJOR == 10 && NV_TENSORRT_MINOR >= 16) || NV_TENSORRT_MAJOR > 10
+    if (dla_adjust_for_dla_) {
+      parser_flags |=
+          1U << static_cast<uint32_t>(nvonnxparser::OnnxParserFlag::kADJUST_FOR_DLA);
+    }
+#endif
+  }
+  return parser_flags;
+}
+
 SubGraphCollection_t TensorrtExecutionProvider::GetSupportedList(SubGraphCollection_t nodes_vector_input,
                                                                  int iterations, const int max_iterations,
                                                                  const OrtGraph* graph, bool* early_termination) const {
@@ -891,10 +943,10 @@ SubGraphCollection_t TensorrtExecutionProvider::GetSupportedList(SubGraphCollect
         TensorrtLogger& trt_logger = GetTensorrtLogger(detailed_build_log_, logger_, &ort_api);
         auto trt_builder = GetBuilder(trt_logger);
         auto network_flags = 0;
-#if NV_TENSORRT_MAJOR > 8
-        network_flags |= (fp16_enable_ || int8_enable_ || bf16_enable_)
-                             ? 0
-                             : 1U << static_cast<uint32_t>(nvinfer1::NetworkDefinitionCreationFlag::kSTRONGLY_TYPED);
+#if NV_TENSORRT_VERSION >= 11
+        network_flags |= 0;
+#elif NV_TENSORRT_MAJOR > 8
+        network_flags |= (fp16_enable_ || int8_enable_ || bf16_enable_) ? 0 : 1U << static_cast<uint32_t>(nvinfer1::NetworkDefinitionCreationFlag::kSTRONGLY_TYPED);
 #else
         network_flags |= 1U << static_cast<uint32_t>(nvinfer1::NetworkDefinitionCreationFlag::kEXPLICIT_BATCH);
 #endif
@@ -902,6 +954,7 @@ SubGraphCollection_t TensorrtExecutionProvider::GetSupportedList(SubGraphCollect
         auto trt_network = std::unique_ptr<nvinfer1::INetworkDefinition>(trt_builder->createNetworkV2(network_flags));
         auto trt_parser =
             tensorrt_ptr::unique_pointer<nvonnxparser::IParser>(nvonnxparser::createParser(*trt_network, trt_logger));
+        trt_parser->setFlags(ComputeParserFlags());
         bool is_model_supported = false;
 
 #if (NV_TENSORRT_MAJOR == 10 && NV_TENSORRT_MINOR > 1) || NV_TENSORRT_MAJOR > 10
@@ -1280,23 +1333,27 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
   TensorrtLogger& trt_logger = GetTensorrtLogger(detailed_build_log_, logger_, &ort_api);
   auto trt_builder = GetBuilder(trt_logger);
   auto network_flags = 0;
-#if NV_TENSORRT_MAJOR > 8
-  network_flags |= (fp16_enable_ || int8_enable_ || bf16_enable_)
-                       ? 0
-                       : 1U << static_cast<uint32_t>(nvinfer1::NetworkDefinitionCreationFlag::kSTRONGLY_TYPED);
+#if NV_TENSORRT_VERSION >= 11
+        network_flags |= 0;
+#elif NV_TENSORRT_MAJOR > 8
+        network_flags |= (fp16_enable_ || int8_enable_ || bf16_enable_) ? 0 : 1U << static_cast<uint32_t>(nvinfer1::NetworkDefinitionCreationFlag::kSTRONGLY_TYPED);
 #else
-  network_flags |= 1U << static_cast<uint32_t>(nvinfer1::NetworkDefinitionCreationFlag::kEXPLICIT_BATCH);
+        network_flags |= 1U << static_cast<uint32_t>(nvinfer1::NetworkDefinitionCreationFlag::kEXPLICIT_BATCH);
 #endif
   auto trt_network = std::unique_ptr<nvinfer1::INetworkDefinition>(trt_builder->createNetworkV2(network_flags));
   auto trt_config = std::unique_ptr<nvinfer1::IBuilderConfig>(trt_builder->createBuilderConfig());
   auto trt_parser =
       tensorrt_ptr::unique_pointer<nvonnxparser::IParser>(nvonnxparser::createParser(*trt_network, trt_logger));
+  trt_parser->setFlags(ComputeParserFlags());
   trt_parser->parse(string_buf.data(), string_buf.size(), model_path_);
   if (max_workspace_size_ > 0) {
     trt_config->setMemoryPoolLimit(nvinfer1::MemoryPoolType::kWORKSPACE, max_workspace_size_);
   }
 
-  // Force Pow + Reduce ops in layer norm to run in FP32 to avoid overflow
+  // Force Pow + Reduce ops in layer norm to run in FP32 to avoid overflow.
+  // setPrecision/setOutputType are removed in TRT 11 (strongly-typed networks); fp16/bf16 are
+  // forced false there, so this block only applies pre-11.
+#if NV_TENSORRT_MAJOR < 11
 #if defined(_MSC_VER)
 #pragma warning(push)
 #pragma warning(disable : 4996)
@@ -1322,6 +1379,7 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
 #if defined(_MSC_VER)
 #pragma warning(pop)
 #endif
+#endif  // NV_TENSORRT_MAJOR < 11
 
   int num_inputs = trt_network->getNbInputs();
   int num_outputs = trt_network->getNbOutputs();
@@ -1467,7 +1525,11 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
     trt_profiles.push_back(trt_builder->createOptimizationProfile());
   }
 
-  // Check platform availability for low precision
+  // Check platform availability for low precision.
+  // platformHasFastFp16 was removed in TRT 11; no #else needed because TRT 11's
+  // minimum GPU requirement (Volta, SM 7.0) exceeds the FP16 threshold (SM 5.3),
+  // so the check would always return true on any TRT 11-capable device.
+#if NV_TENSORRT_MAJOR < 11
   if (fp16_enable_ || bf16_enable_) {
 #if defined(_MSC_VER)
 #pragma warning(push)
@@ -1485,7 +1547,12 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
                                                       message.c_str(), ORT_FILE, __LINE__, __FUNCTION__));
     }
   }
+#endif
 
+  // platformHasFastInt8 was removed in TRT 11; no #else needed because TRT 11's
+  // minimum GPU requirement (Volta, SM 7.0) exceeds the INT8 threshold (SM 6.1),
+  // so the check would always return true on any TRT 11-capable device.
+#if NV_TENSORRT_MAJOR < 11
   if (int8_enable_) {
 #if defined(_MSC_VER)
 #pragma warning(push)
@@ -1502,6 +1569,7 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
                                                       message.c_str(), ORT_FILE, __LINE__, __FUNCTION__));
     }
   }
+#endif
 
   // Load INT8 calibration table
   std::unordered_map<std::string, float> dynamic_range_map;
@@ -1512,16 +1580,19 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
     }
   }
 
-#if defined(_MSC_VER)
-#pragma warning(push)
-#pragma warning(disable : 4996)
-#endif
   const char* name = nullptr;
   RETURN_IF_ERROR(ort_api.Node_GetName(fused_node, &name));
   std::string fused_node_name = name;
 
   // Set precision flags
   std::string trt_node_name_with_precision = fused_node_name;
+  // TRT 11 removed the standalone precision builder flags; networks are strongly-typed and the
+  // fp16/bf16/int8 enables are forced false at construction, so this block only applies pre-11.
+#if NV_TENSORRT_MAJOR < 11
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4996)
+#endif
   if (fp16_enable_) {
     trt_config->setFlag(nvinfer1::BuilderFlag::kFP16);
     trt_node_name_with_precision += "_fp16";
@@ -1551,8 +1622,15 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
 #if defined(_MSC_VER)
 #pragma warning(pop)
 #endif
+#endif  // NV_TENSORRT_MAJOR < 11
   // Set DLA
+  // TRT 11 removed the standalone precision flags (forced false at construction), so gate DLA on
+  // dla_enable_ rather than fp16/int8; pre-11 keeps the original FP16/INT8 gate.
+#if NV_TENSORRT_MAJOR >= 11
+  if (dla_enable_) {
+#else
   if (fp16_enable_ || int8_enable_) {
+#endif
     if (dla_enable_ && dla_core_ >= 0) {  // DLA can only run with FP16 and INT8
       int number_of_dla_core = trt_builder->getNbDLACores();
       if (number_of_dla_core == 0) {
@@ -1571,13 +1649,29 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
                                                           message.c_str(), ORT_FILE, __LINE__, __FUNCTION__));
           dla_core_ = 0;
         }
-        std::string message = "[TensorRT EP] use DLA core " + dla_core_;
+        std::string message = "[TensorRT EP] use DLA core " + std::to_string(dla_core_);
         Ort::ThrowOnError(ep->ort_api.Logger_LogMessage(&ep->logger_,
                                                         OrtLoggingLevel::ORT_LOGGING_LEVEL_VERBOSE,
                                                         message.c_str(), ORT_FILE, __LINE__, __FUNCTION__));
-        trt_config->setFlag(nvinfer1::BuilderFlag::kGPU_FALLBACK);
+        if (dla_gpu_fallback_enable_) {
+          trt_config->setFlag(nvinfer1::BuilderFlag::kGPU_FALLBACK);
+        }
         trt_config->setDefaultDeviceType(nvinfer1::DeviceType::kDLA);
         trt_config->setDLACore(dla_core_);
+#if NV_TENSORRT_MAJOR >= 11
+        // DLA + explicit-QDQ requires FP16 mode on the builder config; kFP16 is deprecated in
+        // TRT 11 but still functional and required here (setDLABackend asserts otherwise).
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4996)
+#endif
+        trt_config->setFlag(nvinfer1::BuilderFlag::kFP16);
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
+#endif
+        trt_config->setMemoryPoolLimit(nvinfer1::MemoryPoolType::kDLA_GLOBAL_DRAM, dla_mem_pool_limit_);
+        trt_config->setMemoryPoolLimit(nvinfer1::MemoryPoolType::kDLA_LOCAL_DRAM, dla_mem_pool_limit_);
         trt_node_name_with_precision += "_dlacore" + std::to_string(dla_core_);
       }
     }
@@ -1805,6 +1899,10 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
           return ort_api.CreateStatus(ORT_EP_FAIL, err_msg.c_str());
         }
       } else {
+        // platformHasFastInt8 and setInt8Calibrator (implicit quantization) were removed in TRT 11.
+        // No #else needed: TRT 11's minimum GPU (Volta, SM 7.0) always has fast INT8 (SM 6.1+),
+        // and explicit quantization via SetDynamicRange is used instead of setInt8Calibrator.
+#if NV_TENSORRT_MAJOR < 11
 #if defined(_MSC_VER)
 #pragma warning(push)
 #pragma warning(disable : 4996)
@@ -1820,6 +1918,7 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
             return ort_api.CreateStatus(ORT_EP_FAIL, err_msg.c_str());
           }
         }
+#endif
 
         // Load timing cache from file. Create a fresh cache if the file doesn't exist
         std::unique_ptr<nvinfer1::ITimingCache> timing_cache = nullptr;
@@ -2058,6 +2157,8 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
       int8_calibration_cache_available_,
       dla_enable_,
       dla_core_,
+      dla_mem_pool_limit_,
+      dla_gpu_fallback_enable_,
       trt_node_name_with_precision,
       engine_cache_enable_,
       cache_path_,
@@ -2222,7 +2323,8 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromPrecompiledEngine
       &max_ctx_mem_size_,
       &context_memory_,
       &tensorrt_mu_,
-      sync_stream_after_enqueue_};
+      sync_stream_after_enqueue_,
+      dla_enable_};
 
   ep->compute_states_for_ep_context_[fused_node_name] = std::move(compute_state);
 
@@ -2688,6 +2790,10 @@ TensorrtExecutionProvider::TensorrtExecutionProvider(TensorrtExecutionProviderFa
     if (fp16_enable_ || int8_enable_) {  // DLA can only be enabled with FP16 or INT8
       dla_enable_ = info_.dla_enable;
       dla_core_ = info_.dla_core;
+      dla_mem_pool_limit_ = info_.dla_mem_pool_limit;
+      dla_gpu_fallback_enable_ = info_.dla_gpu_fallback_enable;
+      dla_enable_uint8_asymmetric_quantization_ = info_.dla_enable_uint8_asymmetric_quantization;
+      dla_adjust_for_dla_ = info_.dla_adjust_for_dla;
     }
     dump_subgraphs_ = info_.dump_subgraphs;
     engine_cache_enable_ = info_.engine_cache_enable;
@@ -2739,6 +2845,21 @@ TensorrtExecutionProvider::TensorrtExecutionProvider(TensorrtExecutionProviderFa
   } else {
     // deprecate env provider option
   }
+
+  // In TRT 11.0 the standalone precision flags (FP16 / BF16 / INT8) were removed; networks are
+  // strongly-typed and precision is driven by the ONNX graph. Force the flags false so the rest of
+  // the EP does not emit the deprecated builder flags. DLA still re-asserts FP16 locally (see below).
+#if NV_TENSORRT_MAJOR >= 11
+  if (fp16_enable_ || bf16_enable_ || int8_enable_) {
+    std::string message = "[TensorRT EP] Compiled for TensorRT >= 11.0 - precision flags (BF16 / FP16 / INT8) have been removed and no longer have an effect. Strongly-typed will be used for all networks.";
+    Ort::ThrowOnError(ort_api.Logger_LogMessage(&logger_,
+                                                OrtLoggingLevel::ORT_LOGGING_LEVEL_WARNING,
+                                                message.c_str(), ORT_FILE, __LINE__, __FUNCTION__));
+    fp16_enable_ = false;
+    bf16_enable_ = false;
+    int8_enable_ = false;
+  }
+#endif
 
   // Validate setting
   if (max_partition_iterations_ <= 0) {
@@ -3217,6 +3338,10 @@ OrtStatus* TRTEpNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_ptr, void*
     for (auto trt_profile : trt_profiles) {
       trt_config->addOptimizationProfile(trt_profile);
     }
+    // platformHasFastInt8 and setInt8Calibrator (implicit quantization) were removed in TRT 11.
+    // No #else needed: TRT 11's minimum GPU (Volta, SM 7.0) always has fast INT8 (SM 6.1+),
+    // and explicit quantization via SetDynamicRange is used instead of setInt8Calibrator.
+#if NV_TENSORRT_MAJOR < 11
 #if defined(_MSC_VER)
 #pragma warning(push)
 #pragma warning(disable : 4996)
@@ -3232,11 +3357,14 @@ OrtStatus* TRTEpNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_ptr, void*
         return ep.ort_api.CreateStatus(ORT_EP_FAIL, err_msg.c_str());
       }
     }
+#endif
+    // Set precision flags. Removed in TRT 11 (strongly-typed networks); the enables are forced
+    // false at construction, so this only applies pre-11.
+#if NV_TENSORRT_MAJOR < 11
 #if defined(_MSC_VER)
 #pragma warning(push)
 #pragma warning(disable : 4996)
 #endif
-    // Set precision
     if (trt_state->int8_enable) {
       trt_config->setFlag(nvinfer1::BuilderFlag::kINT8);
       std::string message = "[TensorRT EP] INT8 mode is enabled";
@@ -3261,15 +3389,36 @@ OrtStatus* TRTEpNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_ptr, void*
 #if defined(_MSC_VER)
 #pragma warning(pop)
 #endif
+#endif  // NV_TENSORRT_MAJOR < 11
     // Set DLA (DLA can only run with FP16 or INT8)
+    // TRT 11 removed the standalone precision flags; gate DLA on dla_enable alone.
+#if NV_TENSORRT_MAJOR >= 11
+    if (trt_state->dla_enable) {
+#else
     if ((trt_state->fp16_enable || trt_state->int8_enable) && trt_state->dla_enable) {
-      std::string message = "[TensorRT EP] use DLA core " + trt_state->dla_core;
+#endif
+      std::string message = "[TensorRT EP] use DLA core " + std::to_string(trt_state->dla_core);
       Ort::ThrowOnError(ep.ort_api.Logger_LogMessage(&ep.logger_,
                                                      OrtLoggingLevel::ORT_LOGGING_LEVEL_VERBOSE,
                                                      message.c_str(), ORT_FILE, __LINE__, __FUNCTION__));
-      trt_config->setFlag(nvinfer1::BuilderFlag::kGPU_FALLBACK);
+      if (trt_state->dla_gpu_fallback_enable) {
+        trt_config->setFlag(nvinfer1::BuilderFlag::kGPU_FALLBACK);
+      }
       trt_config->setDefaultDeviceType(nvinfer1::DeviceType::kDLA);
       trt_config->setDLACore(trt_state->dla_core);
+#if NV_TENSORRT_MAJOR >= 11
+      // DLA + explicit-QDQ requires FP16 mode (kFP16 deprecated but functional).
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4996)
+#endif
+      trt_config->setFlag(nvinfer1::BuilderFlag::kFP16);
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
+#endif
+      trt_config->setMemoryPoolLimit(nvinfer1::MemoryPoolType::kDLA_GLOBAL_DRAM, trt_state->dla_mem_pool_limit);
+      trt_config->setMemoryPoolLimit(nvinfer1::MemoryPoolType::kDLA_LOCAL_DRAM, trt_state->dla_mem_pool_limit);
     }
 
     // enable sparse weights
@@ -3591,6 +3740,9 @@ OrtStatus* TRTEpNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_ptr, void*
 
   // Set execution context memory
   if (trt_state->context_memory_sharing_enable) {
+#if NV_TENSORRT_MAJOR >= 11
+    size_t mem_size = trt_engine->getDeviceMemorySizeV2();
+#else
 #if defined(_MSC_VER)
 #pragma warning(push)
 #pragma warning(disable : 4996)
@@ -3598,6 +3750,7 @@ OrtStatus* TRTEpNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_ptr, void*
     size_t mem_size = trt_engine->getDeviceMemorySize();
 #if defined(_MSC_VER)
 #pragma warning(pop)
+#endif
 #endif
     if (mem_size > *max_context_mem_size_ptr) {
       *max_context_mem_size_ptr = mem_size;
@@ -3684,6 +3837,18 @@ OrtStatus* TRTEpNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_ptr, void*
                                          output_dim_sizes[i]);
         }
       }
+    }
+  }
+
+  // Unregister DLA tensor addresses so cuDLA releases its cudlaMemRegister
+  // hold on ORT's pooled buffers before the allocator recycles the VA.
+  // setTensorAddress(nullptr) must precede any cudaFree on these pointers.
+  if (trt_state->dla_enable) {
+    for (size_t i = 0, end = output_binding_names.size(); i < end; ++i) {
+      trt_context->setTensorAddress(output_binding_names[i], nullptr);
+    }
+    for (size_t i = 0, end = input_binding_names.size(); i < end; ++i) {
+      trt_context->setTensorAddress(input_binding_names[i], nullptr);
     }
   }
 
@@ -3868,6 +4033,9 @@ OrtStatus* TRTEpEpContextNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_p
 
   // Set execution context memory
   if (trt_state->context_memory_sharing_enable) {
+#if NV_TENSORRT_MAJOR >= 11
+    size_t mem_size = trt_engine->getDeviceMemorySizeV2();
+#else
 #if defined(_MSC_VER)
 #pragma warning(push)
 #pragma warning(disable : 4996)
@@ -3875,6 +4043,7 @@ OrtStatus* TRTEpEpContextNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_p
     size_t mem_size = trt_engine->getDeviceMemorySize();
 #if defined(_MSC_VER)
 #pragma warning(pop)
+#endif
 #endif
     if (mem_size > *max_context_mem_size_ptr) {
       *max_context_mem_size_ptr = mem_size;
@@ -3961,6 +4130,18 @@ OrtStatus* TRTEpEpContextNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_p
                                          output_dim_sizes[i]);
         }
       }
+    }
+  }
+
+  // Unregister DLA tensor addresses so cuDLA releases its cudlaMemRegister
+  // hold on ORT's pooled buffers before the allocator recycles the VA.
+  // setTensorAddress(nullptr) must precede any cudaFree on these pointers.
+  if (trt_state->dla_enable) {
+    for (size_t i = 0, end = output_binding_names.size(); i < end; ++i) {
+      trt_context->setTensorAddress(output_binding_names[i], nullptr);
+    }
+    for (size_t i = 0, end = input_binding_names.size(); i < end; ++i) {
+      trt_context->setTensorAddress(input_binding_names[i], nullptr);
     }
   }
 

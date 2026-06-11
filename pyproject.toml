@@ -1,0 +1,46 @@
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "E",    # pycodestyle
+    "F",    # Pyflakes
+    "FURB", # refurb
+    "G",    # flake8-logging-format
+    "I",    # isort
+    "ISC",  # flake8-implicit-str-concat
+    "N",    # pep8-naming
+    "NPY",  # numpy
+    "PERF", # Perflint
+    "PIE",  # flake8-pie
+    "PLC",  # pylint conventions
+    "PLE",  # pylint errors
+    "PLW",  # pylint warnings
+    "PYI",  # flake8-pyi
+    "RUF",  # Ruff-specific rules
+    "SIM",  # flake8-simplify
+    "SLOT", # flake8-slots
+    "T10",  # flake8-debugger
+    "UP",   # pyupgrade
+    "W",    # pycodestyle
+    "YTT",  # flake8-2020
+]
+ignore = [
+    "E501",    # Line length controlled by ruff-format
+    "N803",    # Argument casing
+    "N812",    # Lowercase imported as non-lowercase
+    "N999",    # Invalid module name
+    "PERF203", # try-except in loop
+    "PLC1901", # Compare to empty string
+    "PLW2901", # Redefined loop variable
+    "SIM102",  # Nested if
+    "SIM108",  # Ternary operator
+    "SIM114",  # Combine if branches
+    "SIM117",  # Nested with
+]
+
+[tool.ruff.lint.per-file-ignores]
+"**/*test*.py" = ["N"]  # Naming conventions relaxed in tests

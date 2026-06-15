@@ -223,7 +223,7 @@ jobs:
       uses: actions/checkout@v6
       with:
         repository: microsoft/onnxruntime
-        ref: 'rel-1.25.0'
+        ref: 'rel-1.26.0'
         token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Setup python

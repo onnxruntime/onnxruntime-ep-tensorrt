@@ -114,7 +114,7 @@ class CudaGraphTest : public ::testing::Test {
     model_path_ = WriteModelToTempFile(model_data);
 
     // Register the TRT plugin EP library
-    ep_registration_name_ = "NvTensorRtRtx";
+    ep_registration_name_ = "TRTPluginEP";
 #ifdef _WIN32
     std::wstring wide_path(ep_library_path_.begin(), ep_library_path_.end());
     env_->RegisterExecutionProviderLibrary(ep_registration_name_.c_str(), wide_path);

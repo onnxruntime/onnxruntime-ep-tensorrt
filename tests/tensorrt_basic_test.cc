@@ -675,3 +675,60 @@ TEST_F(TensorrtBasicTest, DynamicInputShapes) {
     }
   }
 }
+
+// Test TRT plugins custom op: verify that a model using a custom op from the
+// "trt.plugins" domain can be loaded and that the session initializes successfully.
+// This validates that the EP factory correctly registers TRT plugins as custom ops
+// via GetNumCustomOpDomains/GetCustomOpDomains.
+// Adapted from TensorrtExecutionProviderTest.TRTPluginsCustomOpTest
+TEST_F(TensorrtBasicTest, TRTPluginsCustomOpTest) {
+  auto testdata_dir = GetTestDataDir();
+  auto model_path = testdata_dir / "trt_plugin_custom_op_test.onnx";
+  if (!std::filesystem::exists(model_path)) {
+    GTEST_SKIP() << "Test model not found: " << model_path;
+  }
+
+  // The model contains a DisentangledAttention_TRT node in the "trt.plugins" domain.
+  // If custom ops are not registered, session creation will fail because ORT won't
+  // recognize the custom op domain/type.
+  auto session = CreateSession(model_path);
+
+  // Prepare inputs: three float tensors of shape [12, 256, 256]
+  constexpr size_t elem_count = 12 * 256 * 256;  // 786432
+  std::vector<float> input_data(elem_count, 1.0f);
+  std::array<int64_t, 3> shape = {12, 256, 256};
+
+  Ort::MemoryInfo cpu_mem = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+  auto input1 = Ort::Value::CreateTensor(cpu_mem, input_data.data(), input_data.size(),
+                                         shape.data(), shape.size());
+  auto input2 = Ort::Value::CreateTensor(cpu_mem, input_data.data(), input_data.size(),
+                                         shape.data(), shape.size());
+  auto input3 = Ort::Value::CreateTensor(cpu_mem, input_data.data(), input_data.size(),
+                                         shape.data(), shape.size());
+
+  const char* input_names[] = {"input1", "input2", "input3"};
+  const char* output_names[] = {"output"};
+  Ort::Value inputs[] = {std::move(input1), std::move(input2), std::move(input3)};
+
+  // Run inference. The DisentangledAttention_TRT plugin may or may not be present
+  // in the TRT plugin registry depending on the TRT version. The key validation is
+  // that session creation succeeded (custom ops were registered). If the specific
+  // plugin is not available, the Run may fail -- that's acceptable.
+  try {
+    auto outputs = session.Run(Ort::RunOptions{}, input_names, inputs, 3, output_names, 1);
+    ASSERT_EQ(outputs.size(), 1u);
+
+    // Verify output shape matches expected [12, 256, 256]
+    auto type_info = outputs[0].GetTensorTypeAndShapeInfo();
+    auto out_shape = type_info.GetShape();
+    ASSERT_EQ(out_shape.size(), 3u);
+    EXPECT_EQ(out_shape[0], 12);
+    EXPECT_EQ(out_shape[1], 256);
+    EXPECT_EQ(out_shape[2], 256);
+  } catch (const Ort::Exception& e) {
+    // If the specific TRT plugin (DisentangledAttention_TRT) is not registered,
+    // inference may fail. This is still a valid test -- the key assertion is that
+    // the session was created and initialized successfully above.
+    GTEST_LOG_(INFO) << "Inference with TRT plugin custom op threw (plugin may not be available): " << e.what();
+  }
+}

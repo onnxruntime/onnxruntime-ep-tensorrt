@@ -2,6 +2,7 @@
 
 #include "utils/ep_utils.h"
 #include "tensorrt_execution_provider_data_transfer.h"
+#include "tensorrt_execution_provider_custom_ops.h"
 #include "cuda_allocator.h"
 
 #include <mutex>
@@ -64,6 +65,13 @@ struct TensorrtExecutionProviderFactory : public OrtEpFactory, public ApiPtrs {
 
   static bool ORT_API_CALL IsStreamAwareImpl(const OrtEpFactory* /*this_ptr*/) noexcept;
 
+  static OrtStatus* ORT_API_CALL GetNumCustomOpDomainsImpl(OrtEpFactory* this_ptr,
+                                                           size_t* num_domains) noexcept;
+
+  static OrtStatus* ORT_API_CALL GetCustomOpDomainsImpl(OrtEpFactory* this_ptr,
+                                                        OrtCustomOpDomain** domains,
+                                                        size_t num_domains) noexcept;
+
   const std::string ep_name_;              // EP name
   const std::string vendor_{"Nvidia"};     // EP vendor name
   const std::string ep_version_{"0.1.0"};  // EP version
@@ -77,6 +85,9 @@ struct TensorrtExecutionProviderFactory : public OrtEpFactory, public ApiPtrs {
   // Note: If this factory instead created EP instances that each supported different hardware configurations, then
   // the factory could cache a different kernel registry per EP configuration.
   OrtKernelRegistry* kernel_registry_ = nullptr;
+
+  // Cached custom op domain list for TRT plugins.
+  std::vector<OrtCustomOpDomain*> custom_op_domain_list_;
 
   struct HardwareDeviceKey {
     OrtHardwareDeviceType type{OrtHardwareDeviceType::OrtHardwareDeviceType_CPU};

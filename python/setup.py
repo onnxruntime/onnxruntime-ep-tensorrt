@@ -1,8 +1,9 @@
+import os
+import shutil
+from pathlib import Path
+
 from setuptools import setup
 from setuptools.dist import Distribution
-import os
-from pathlib import Path
-import shutil
 
 script_dir = Path(__file__).parent
 
@@ -18,10 +19,12 @@ dst_libs_dir = script_dir / "onnxruntime_ep_tensorrt"
 dst_libs_dir.mkdir(exist_ok=True)
 shutil.copyfile(ep_lib_path, dst_libs_dir / ep_lib_path.name)
 
+
 class BinaryDistribution(Distribution):
     # This ensures wheel is marked as "non-pure" (has binary files)
     def has_ext_modules(self):
         return True
+
 
 setup(
     name="onnxruntime-ep-tensorrt",

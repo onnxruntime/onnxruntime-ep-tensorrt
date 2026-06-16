@@ -3661,6 +3661,10 @@ OrtStatus* TRTEpNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_ptr, void*
       return ep.ort_api.CreateStatus(ORT_EP_FAIL, err_msg.c_str());
     }
     trt_context = trt_state->context->get();
+
+    // Clear DDS output allocator map since the old allocators were registered on
+    // the previous context. They need to be re-registered on the new context.
+    dds_output_allocator_map.clear();
   }
 
   // Check before using trt_engine

@@ -337,9 +337,9 @@ TEST_F(TensorrtBasicTest, TestSessionOutputs_UnusedNodeOutput) {
 
 // Test inference with a model that has data-dependent shape (DDS) output.
 // Adapted from TensorrtExecutionProviderTest.DDSOutputTest
-// Disabled: TRT EP currently doesn't support output allocator for data-dependent shape (DDS) outputs.
-// TensorRT requires setOutputAllocator for DDS outputs, which is not yet implemented in the plugin EP.
-TEST_F(TensorrtBasicTest, DISABLED_DDSOutputTest) {
+// Test inference with a model that has data-dependent shape (DDS) output.
+// Adapted from TensorrtExecutionProviderTest.DDSOutputTest
+TEST_F(TensorrtBasicTest, DDSOutputTest) {
   auto testdata_dir = GetTestDataDir();
   auto model_path = testdata_dir / "ort_github_issue_26272_dds.onnx";
   if (!std::filesystem::exists(model_path)) {

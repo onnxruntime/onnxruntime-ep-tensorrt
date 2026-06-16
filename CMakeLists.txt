@@ -228,6 +228,7 @@ if(ORTTensorRTEp_BUILD_TESTS)
 
   add_executable(trt_ep_tests
     tests/cuda_graph_test.cc
+    tests/tensorrt_basic_test.cc
   )
   target_compile_definitions(trt_ep_tests PRIVATE
     -DONNX_NAMESPACE=onnx
@@ -247,8 +248,20 @@ if(ORTTensorRTEp_BUILD_TESTS)
     GTest::gtest_main
   )
 
+  # Copy testdata to the build directory so tests can find it
+  if(EXISTS "${CMAKE_SOURCE_DIR}/tests/testdata")
+    add_custom_command(TARGET trt_ep_tests POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_SOURCE_DIR}/tests/testdata"
+        "$<TARGET_FILE_DIR:trt_ep_tests>/testdata"
+      COMMENT "Copying testdata to build output directory"
+    )
+  endif()
+
   include(GoogleTest)
-  gtest_discover_tests(trt_ep_tests)
+  gtest_discover_tests(trt_ep_tests
+    PROPERTIES ENVIRONMENT "TESTDATA_DIR=$<TARGET_FILE_DIR:trt_ep_tests>/testdata"
+  )
 endif()
 
 if(ORTTensorRTEp_INSTALL)

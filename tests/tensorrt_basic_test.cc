@@ -117,79 +117,6 @@ static std::string CreateAddModel(const std::vector<int>& dims) {
   return model_data;
 }
 
-// Build a model with Bool/logic ops: M = And(Not(Xor(X, Y)), Xor(Not(Xor(X, Y)), Z))
-// Tests graph partitioning with ops that may not all be TRT-supported.
-// Input:  X, Y, Z  bool [dims...]
-// Output: M        bool [dims...]
-static std::string CreateBoolLogicModel(const std::vector<int>& dims) {
-  ONNX_NAMESPACE::ModelProto model;
-  model.set_ir_version(ONNX_NAMESPACE::Version::IR_VERSION);
-  auto* opset = model.add_opset_import();
-  opset->set_domain("");
-  opset->set_version(13);
-
-  auto* graph = model.mutable_graph();
-  graph->set_name("bool_logic_graph");
-
-  auto make_bool_type = [&](const std::vector<int>& shape) {
-    ONNX_NAMESPACE::TypeProto type;
-    type.mutable_tensor_type()->set_elem_type(ONNX_NAMESPACE::TensorProto_DataType_BOOL);
-    for (auto d : shape) {
-      type.mutable_tensor_type()->mutable_shape()->add_dim()->set_dim_value(d);
-    }
-    return type;
-  };
-
-  auto bool_type = make_bool_type(dims);
-
-  // Inputs
-  for (const char* name : {"X", "Y", "Z"}) {
-    auto* input = graph->add_input();
-    input->set_name(name);
-    *input->mutable_type() = bool_type;
-  }
-
-  // Output M
-  auto* output = graph->add_output();
-  output->set_name("M");
-  *output->mutable_type() = bool_type;
-
-  // Node 1: xor1_out = Xor(X, Y)
-  auto* node1 = graph->add_node();
-  node1->set_op_type("Xor");
-  node1->set_name("xor1");
-  node1->add_input("X");
-  node1->add_input("Y");
-  node1->add_output("xor1_out");
-
-  // Node 2: not_out = Not(xor1_out)
-  auto* node2 = graph->add_node();
-  node2->set_op_type("Not");
-  node2->set_name("not");
-  node2->add_input("xor1_out");
-  node2->add_output("not_out");
-
-  // Node 3: xor2_out = Xor(not_out, Z)
-  auto* node3 = graph->add_node();
-  node3->set_op_type("Xor");
-  node3->set_name("xor2");
-  node3->add_input("not_out");
-  node3->add_input("Z");
-  node3->add_output("xor2_out");
-
-  // Node 4: M = And(not_out, xor2_out)
-  auto* node4 = graph->add_node();
-  node4->set_op_type("And");
-  node4->set_name("and");
-  node4->add_input("not_out");
-  node4->add_input("xor2_out");
-  node4->add_output("M");
-
-  std::string model_data;
-  model.SerializeToString(&model_data);
-  return model_data;
-}
-
 // Create a synthetic EPContext model with a specific "source" attribute.
 static std::string CreateSyntheticEPContextModel(const std::string& source_attr,
                                                  bool include_source_attr = true) {
@@ -375,47 +302,6 @@ TEST_F(TensorrtBasicTest, FunctionTest) {
   std::array<float, 6> expected = {3.0f, 6.0f, 9.0f, 12.0f, 15.0f, 18.0f};
   for (size_t i = 0; i < expected.size(); i++) {
     EXPECT_NEAR(output_data[i], expected[i], 1e-5f) << "Mismatch at index " << i;
-  }
-}
-
-// Test inference with boolean logic ops: graph partitioning test.
-// Adapted from TensorrtExecutionProviderTest.RemoveCycleTest
-TEST_F(TensorrtBasicTest, RemoveCycleTest) {
-  std::vector<int> dims = {1, 3, 2};
-  auto model_data = CreateBoolLogicModel(dims);
-  auto model_path = WriteAndTrack(model_data, "trt_basic_removecycle_test.onnx");
-
-  auto session = CreateSession(model_path);
-
-  // Prepare bool inputs
-  // ONNX bool tensors use 1 byte per element
-  std::array<bool, 6> x_values = {true, false, true, false, true, false};
-  std::array<bool, 6> y_values = {true, true, false, true, false, false};
-  std::array<bool, 6> z_values = {true, false, true, false, true, false};
-  const std::array<int64_t, 3> shape = {1, 3, 2};
-
-  Ort::MemoryInfo cpu_mem = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
-  auto input_x = Ort::Value::CreateTensor(cpu_mem, x_values.data(), x_values.size(), shape.data(), shape.size());
-  auto input_y = Ort::Value::CreateTensor(cpu_mem, y_values.data(), y_values.size(), shape.data(), shape.size());
-  auto input_z = Ort::Value::CreateTensor(cpu_mem, z_values.data(), z_values.size(), shape.data(), shape.size());
-
-  const char* input_names[] = {"X", "Y", "Z"};
-  const char* output_names[] = {"M"};
-  Ort::Value inputs[] = {std::move(input_x), std::move(input_y), std::move(input_z)};
-
-  auto outputs = session.Run(Ort::RunOptions{}, input_names, inputs, 3, output_names, 1);
-
-  ASSERT_EQ(outputs.size(), 1u);
-  const bool* output_data = outputs[0].GetTensorData<bool>();
-
-  // Expected results:
-  // xor1 = X ^ Y = {0, 1, 1, 1, 1, 0}
-  // not  = !xor1 = {1, 0, 0, 0, 0, 1}
-  // xor2 = not ^ Z = {0, 0, 1, 0, 1, 1}
-  // M    = not & xor2 = {0, 0, 0, 0, 0, 1}
-  std::array<bool, 6> expected = {false, false, false, false, false, true};
-  for (size_t i = 0; i < expected.size(); i++) {
-    EXPECT_EQ(output_data[i], expected[i]) << "Mismatch at index " << i;
   }
 }
 

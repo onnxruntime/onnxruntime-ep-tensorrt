@@ -261,6 +261,7 @@ if(ORTTensorRTEp_BUILD_TESTS)
   include(GoogleTest)
   gtest_discover_tests(trt_ep_tests
     PROPERTIES ENVIRONMENT "TESTDATA_DIR=$<TARGET_FILE_DIR:trt_ep_tests>/testdata"
+    DISCOVERY_MODE PRE_TEST
   )
 endif()
 

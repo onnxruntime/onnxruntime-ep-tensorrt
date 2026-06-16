@@ -347,6 +347,7 @@ jobs:
           # Copy onnxruntime.dll to same directory as test exe so it's found
           Copy-Item "${{ github.workspace }}\onnxruntime\onnxruntime.dll" `
                     "${{ github.workspace }}\orttrtep\bin\onnxruntime.dll" -ErrorAction SilentlyContinue
+
           & $testExe --gtest_output=xml:trt_ep_unit_test_results.xml
           if ($lastExitCode -ne 0) {
             exit $lastExitCode

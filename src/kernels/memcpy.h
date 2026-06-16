@@ -11,7 +11,7 @@ namespace trt_ep {
 struct MemcpyKernelBase : public OrtKernelImpl {
   // Base class for MemcpyFromHost and MemcpyToHost to share common code.
  protected:
-  MemcpyKernelBase(const OrtKernelInfo* info, void* state) : OrtKernelImpl {}, info_(info), state_(state) {}
+  MemcpyKernelBase(const OrtKernelInfo* info, void* state) : OrtKernelImpl{}, info_(info), state_(state) {}
 
   template <typename T>
   static OrtStatus* CreateImpl(const OrtKernelInfo* info, void* state, /*out*/ OrtKernelImpl*& kernel) noexcept;
@@ -77,4 +77,4 @@ struct MemcpyToHost : public MemcpyKernelBase {
   };
 };
 
-}
+}  // namespace trt_ep

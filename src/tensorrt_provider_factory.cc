@@ -15,7 +15,7 @@
 // C API boundary guard.
 //
 // Every C API entry point (ORT_API_CALL / extern "C") that returns OrtStatus*
-// must catch all C++ exceptions before they cross the boundary — propagating
+// must catch all C++ exceptions before they cross the boundary -- propagating
 // exceptions through a C ABI is undefined behaviour.
 //
 // Usage:
@@ -27,11 +27,13 @@
 //   }
 // ---------------------------------------------------------------------------
 #define API_IMPL_BEGIN try {
-#define API_IMPL_END(ort_api_ref)                                                    \
-  } catch (const std::exception& ex) {                                               \
-    return (ort_api_ref).CreateStatus(ORT_EP_FAIL, ex.what());                       \
-  } catch (...) {                                                                    \
-    return (ort_api_ref).CreateStatus(ORT_EP_FAIL, "Unknown exception in TRT EP");   \
+#define API_IMPL_END(ort_api_ref)                                                  \
+  }                                                                                \
+  catch (const std::exception& ex) {                                               \
+    return (ort_api_ref).CreateStatus(ORT_EP_FAIL, ex.what());                     \
+  }                                                                                \
+  catch (...) {                                                                    \
+    return (ort_api_ref).CreateStatus(ORT_EP_FAIL, "Unknown exception in TRT EP"); \
   }
 
 // ---------------------------------------------------------------------------
@@ -78,7 +80,7 @@ void DestroyBuilderPlaceholder() {
 namespace trt_ep {
 
 TensorrtExecutionProviderFactory::TensorrtExecutionProviderFactory(const char* ep_name, const OrtLogger& default_logger, ApiPtrs apis)
-    : OrtEpFactory {},
+    : OrtEpFactory{},
       ApiPtrs(apis),
       default_logger_{default_logger},
       ep_name_{ep_name},
@@ -94,7 +96,7 @@ TensorrtExecutionProviderFactory::TensorrtExecutionProviderFactory(const char* e
   CreateAllocator = CreateAllocatorImpl;
   ReleaseAllocator = ReleaseAllocatorImpl;
   CreateDataTransfer = CreateDataTransferImpl;
-  IsStreamAware = IsStreamAwareImpl; 
+  IsStreamAware = IsStreamAwareImpl;
 }
 
 TensorrtExecutionProviderFactory::~TensorrtExecutionProviderFactory() {
@@ -119,25 +121,24 @@ const char* ORT_API_CALL TensorrtExecutionProviderFactory::GetVersionImpl(const 
 }
 
 const OrtMemoryInfo* TensorrtExecutionProviderFactory::GetMemoryInfoByOrdinal(int cuda_ordinal, bool is_pinned) {
-    // Get default OrtMemoryInfo from factory's device cache
-    const OrtMemoryInfo* mem_info = nullptr;
-    auto* cache_entry = FindDeviceCacheEntryByOrdinal(cuda_ordinal);
-    if (cache_entry != nullptr) {
-        mem_info = is_pinned ? cache_entry->pinned_memory_info :
-                               cache_entry->device_memory_info; // Ort::MemoryInfo implicitly converts to OrtMemoryInfo*
-    }
-    return mem_info;
+  // Get default OrtMemoryInfo from factory's device cache
+  const OrtMemoryInfo* mem_info = nullptr;
+  auto* cache_entry = FindDeviceCacheEntryByOrdinal(cuda_ordinal);
+  if (cache_entry != nullptr) {
+    mem_info = is_pinned ? cache_entry->pinned_memory_info : cache_entry->device_memory_info;  // Ort::MemoryInfo implicitly converts to OrtMemoryInfo*
+  }
+  return mem_info;
 }
 
 TensorrtExecutionProviderFactory::HardwareDeviceKey TensorrtExecutionProviderFactory::MakeDeviceKey(const OrtApi& ort_api,
-    const OrtHardwareDevice& device,
-    int cuda_ordinal) {
-    return {
-        ort_api.HardwareDevice_Type(&device),
-        ort_api.HardwareDevice_VendorId(&device),
-        ort_api.HardwareDevice_DeviceId(&device),
-        cuda_ordinal,
-    };
+                                                                                                    const OrtHardwareDevice& device,
+                                                                                                    int cuda_ordinal) {
+  return {
+      ort_api.HardwareDevice_Type(&device),
+      ort_api.HardwareDevice_VendorId(&device),
+      ort_api.HardwareDevice_DeviceId(&device),
+      cuda_ordinal,
+  };
 }
 
 OrtStatus* ORT_API_CALL TensorrtExecutionProviderFactory::GetSupportedDevicesImpl(
@@ -179,9 +180,9 @@ OrtStatus* ORT_API_CALL TensorrtExecutionProviderFactory::GetSupportedDevicesImp
 
   if (cuda_device_count == 0) {
     RETURN_IF_ERROR(factory->ort_api.Logger_LogMessage(&factory->default_logger_,
-                    OrtLoggingLevel::ORT_LOGGING_LEVEL_WARNING,
-                    "No CUDA devices found on the system. No OrtEpDevice will be created and returned.",
-                    ORT_FILE, __LINE__, __FUNCTION__));
+                                                       OrtLoggingLevel::ORT_LOGGING_LEVEL_WARNING,
+                                                       "No CUDA devices found on the system. No OrtEpDevice will be created and returned.",
+                                                       ORT_FILE, __LINE__, __FUNCTION__));
   }
 
   int cuda_device_index_fallback = 0;  // fallback counter when metadata lacks PCI bus ID
@@ -348,7 +349,7 @@ void ORT_API_CALL TensorrtExecutionProviderFactory::ReleaseEpImpl(OrtEpFactory* 
     TensorrtExecutionProvider* trt_ep = static_cast<TensorrtExecutionProvider*>(ep);
     delete trt_ep;
   } catch (const std::exception& ex) {
-    // void return — cannot report via OrtStatus*. Log so teardown failures are diagnosable.
+    // void return -- cannot report via OrtStatus*. Log so teardown failures are diagnosable.
     auto* factory = static_cast<TensorrtExecutionProviderFactory*>(this_ptr);
     auto* log_status = factory->ort_api.Logger_LogMessage(&factory->default_logger_,
                                                           OrtLoggingLevel::ORT_LOGGING_LEVEL_ERROR,
@@ -466,23 +467,23 @@ OrtStatus* TensorrtExecutionProviderFactory::GetKernelRegistryForEp(TensorrtExec
 }
 
 TensorrtExecutionProviderFactory::DeviceCacheEntry* TensorrtExecutionProviderFactory::FindDeviceCacheEntryByOrdinalLocked(int cuda_ordinal) {
-    auto key_it = ordinal_to_device_key_.find(cuda_ordinal);
-    if (key_it == ordinal_to_device_key_.end()) {
-        return nullptr;
-    }
-    auto cache_it = device_cache_.find(key_it->second);
-    if (cache_it == device_cache_.end()) {
-        return nullptr;
-    }
-    return &cache_it->second;
+  auto key_it = ordinal_to_device_key_.find(cuda_ordinal);
+  if (key_it == ordinal_to_device_key_.end()) {
+    return nullptr;
+  }
+  auto cache_it = device_cache_.find(key_it->second);
+  if (cache_it == device_cache_.end()) {
+    return nullptr;
+  }
+  return &cache_it->second;
 }
 
 // IMPORTANT: Entries are never erased from device_cache_ after insertion.
 // This guarantees pointer stability for DeviceCacheEntry* returned by
 // FindDeviceCacheEntryByOrdinal() after the lock is released.
 TensorrtExecutionProviderFactory::DeviceCacheEntry* TensorrtExecutionProviderFactory::FindDeviceCacheEntryByOrdinal(int cuda_ordinal) {
-    std::lock_guard<std::mutex> lock(device_cache_mutex_);
-    return FindDeviceCacheEntryByOrdinalLocked(cuda_ordinal);
+  std::lock_guard<std::mutex> lock(device_cache_mutex_);
+  return FindDeviceCacheEntryByOrdinalLocked(cuda_ordinal);
 }
 
 }  // namespace trt_ep
@@ -567,7 +568,7 @@ EXPORT_SYMBOL OrtStatus* ReleaseEpFactory(OrtEpFactory* factory) {
     if (ort_api != nullptr) {
       return ort_api->CreateStatus(ORT_EP_FAIL, ex.what());
     }
-    // ort_api not yet captured — nothing we can do except not crash.
+    // ort_api not yet captured -- nothing we can do except not crash.
     return nullptr;
   } catch (...) {
     if (ort_api != nullptr) {

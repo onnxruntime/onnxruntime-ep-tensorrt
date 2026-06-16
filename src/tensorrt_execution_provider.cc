@@ -888,7 +888,7 @@ SubGraphCollection_t TensorrtExecutionProvider::GetSupportedList(SubGraphCollect
     if (!group.first.empty()) {
       if (group.second) {
         nodes_list_output.push_back(group);
-      } else { 
+      } else {
         std::vector<Ort::ConstNode> selected_nodes(group.first.size());
         size_t i = 0;
         for (const auto& index : group.first) {
@@ -1334,11 +1334,11 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
   auto trt_builder = GetBuilder(trt_logger);
   auto network_flags = 0;
 #if NV_TENSORRT_VERSION >= 11
-        network_flags |= 0;
+  network_flags |= 0;
 #elif NV_TENSORRT_MAJOR > 8
-        network_flags |= (fp16_enable_ || int8_enable_ || bf16_enable_) ? 0 : 1U << static_cast<uint32_t>(nvinfer1::NetworkDefinitionCreationFlag::kSTRONGLY_TYPED);
+  network_flags |= (fp16_enable_ || int8_enable_ || bf16_enable_) ? 0 : 1U << static_cast<uint32_t>(nvinfer1::NetworkDefinitionCreationFlag::kSTRONGLY_TYPED);
 #else
-        network_flags |= 1U << static_cast<uint32_t>(nvinfer1::NetworkDefinitionCreationFlag::kEXPLICIT_BATCH);
+  network_flags |= 1U << static_cast<uint32_t>(nvinfer1::NetworkDefinitionCreationFlag::kEXPLICIT_BATCH);
 #endif
   auto trt_network = std::unique_ptr<nvinfer1::INetworkDefinition>(trt_builder->createNetworkV2(network_flags));
   auto trt_config = std::unique_ptr<nvinfer1::IBuilderConfig>(trt_builder->createBuilderConfig());
@@ -3172,10 +3172,9 @@ OrtStatus* TRTEpNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_ptr, void*
   auto& dds_output_allocator_map = dds_output_allocator_maps[fused_node_name];
 
   // Get default OrtMemoryInfo from factory's device cache
-  const OrtMemoryInfo* mem_info = ep.factory_.GetMemoryInfoByOrdinal(device_id, /* is pinned */false);
+  const OrtMemoryInfo* mem_info = ep.factory_.GetMemoryInfoByOrdinal(device_id, /* is pinned */ false);
   if (mem_info == nullptr) {
-    std::string err_msg = "TensorRT EP failed to get OrtMemoryInfo for device_id "
-                          + std::to_string(device_id) + " from provider factory.";
+    std::string err_msg = "TensorRT EP failed to get OrtMemoryInfo for device_id " + std::to_string(device_id) + " from provider factory.";
     return ep.ort_api.CreateStatus(ORT_EP_FAIL, err_msg.c_str());
   }
 
@@ -3390,8 +3389,8 @@ OrtStatus* TRTEpNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_ptr, void*
 #pragma warning(pop)
 #endif
 #endif  // NV_TENSORRT_MAJOR < 11
-    // Set DLA (DLA can only run with FP16 or INT8)
-    // TRT 11 removed the standalone precision flags; gate DLA on dla_enable alone.
+        // Set DLA (DLA can only run with FP16 or INT8)
+        // TRT 11 removed the standalone precision flags; gate DLA on dla_enable alone.
 #if NV_TENSORRT_MAJOR >= 11
     if (trt_state->dla_enable) {
 #else
@@ -3457,18 +3456,18 @@ OrtStatus* TRTEpNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_ptr, void*
                                                      message.c_str(), ORT_FILE, __LINE__, __FUNCTION__));
     }
 #else
-    if (trt_state->builder_optimization_level != 3) {
-      std::string message = "[TensorRT EP] Builder optimization level can only be used on TRT 8.6 onwards!";
-      Ort::ThrowOnError(ep.ort_api.Logger_LogMessage(&ep.logger_,
-                                                     OrtLoggingLevel::ORT_LOGGING_LEVEL_VERBOSE,
-                                                     message.c_str(), ORT_FILE, __LINE__, __FUNCTION__));
-    }
-    if (trt_state->auxiliary_streams >= 0) {
-      std::string message = "[TensorRT EP] Auxiliary streams can only be set on TRT 8.6 onwards!";
-      Ort::ThrowOnError(ep.ort_api.Logger_LogMessage(&ep.logger_,
-                                                     OrtLoggingLevel::ORT_LOGGING_LEVEL_VERBOSE,
-                                                     message.c_str(), ORT_FILE, __LINE__, __FUNCTION__));
-    }
+  if (trt_state->builder_optimization_level != 3) {
+    std::string message = "[TensorRT EP] Builder optimization level can only be used on TRT 8.6 onwards!";
+    Ort::ThrowOnError(ep.ort_api.Logger_LogMessage(&ep.logger_,
+                                                   OrtLoggingLevel::ORT_LOGGING_LEVEL_VERBOSE,
+                                                   message.c_str(), ORT_FILE, __LINE__, __FUNCTION__));
+  }
+  if (trt_state->auxiliary_streams >= 0) {
+    std::string message = "[TensorRT EP] Auxiliary streams can only be set on TRT 8.6 onwards!";
+    Ort::ThrowOnError(ep.ort_api.Logger_LogMessage(&ep.logger_,
+                                                   OrtLoggingLevel::ORT_LOGGING_LEVEL_VERBOSE,
+                                                   message.c_str(), ORT_FILE, __LINE__, __FUNCTION__));
+  }
 #endif
     if (weight_stripped_engine_enable) {
 #if NV_TENSORRT_MAJOR >= 10
@@ -3937,11 +3936,10 @@ OrtStatus* TRTEpEpContextNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_p
   std::unordered_map<std::string, std::vector<int64_t>> shape_tensor_values_int64;  // same as above but for int64 shape tensor input
 
   // Get default OrtMemoryInfo from factory's device cache
-  const OrtMemoryInfo* mem_info = ep.factory_.GetMemoryInfoByOrdinal(device_id, /* is pinned */false);
+  const OrtMemoryInfo* mem_info = ep.factory_.GetMemoryInfoByOrdinal(device_id, /* is pinned */ false);
   if (mem_info == nullptr) {
-      std::string err_msg = "TensorRT EP failed to get OrtMemoryInfo for device_id "
-          + std::to_string(device_id) + " from provider factory.";
-      return ep.ort_api.CreateStatus(ORT_EP_FAIL, err_msg.c_str());
+    std::string err_msg = "TensorRT EP failed to get OrtMemoryInfo for device_id " + std::to_string(device_id) + " from provider factory.";
+    return ep.ort_api.CreateStatus(ORT_EP_FAIL, err_msg.c_str());
   }
 
   // Get allocator from OrtKernelContext

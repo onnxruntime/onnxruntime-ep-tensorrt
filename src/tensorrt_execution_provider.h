@@ -275,8 +275,8 @@ struct TensorrtExecutionProvider : public OrtEp, public ApiPtrs {
                                                                _Outptr_ OrtSyncStreamImpl** stream) noexcept;
 
   static OrtStatus* ORT_API_CALL GetKernelRegistryImpl(
-    _In_ OrtEp* this_ptr,
-    _Outptr_result_maybenull_ const OrtKernelRegistry** kernel_registry) noexcept;
+      _In_ OrtEp* this_ptr,
+      _Outptr_result_maybenull_ const OrtKernelRegistry** kernel_registry) noexcept;
 
   nvonnxparser::OnnxParserFlags ComputeParserFlags() const;
 

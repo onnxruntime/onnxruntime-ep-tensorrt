@@ -4,6 +4,7 @@
 #include "utils/provider_options.h"
 #include "tensorrt_execution_provider_info.h"
 #include "nv_includes.h"
+#include "cuda_graph.h"
 
 #include <ctime>
 #include <string>
@@ -259,6 +260,51 @@ struct TensorrtExecutionProvider : public OrtEp, public ApiPtrs {
   // and should be kept for the lifetime of TRT EP object.
   OrtAllocator* alloc_ = nullptr;
 
+  // CUDA Graph support (aligned with CUDA plugin EP's CudaGraphManager)
+  //
+  // Note: Unlike the CUDA plugin EP, TRT EP does not implement GetGraphAnnotationId() to parse
+  // "gpu_graph_id" from OrtRunOptions for multi-graph support. This is because:
+  // 1. TRT EP typically fuses the entire model into a single TRT engine (one node), so there is
+  //    usually only one graph to capture (using the default annotation id 0).
+  // 2. TRT handles dynamic shapes via optimization profiles rather than multiple CUDA graphs.
+  // 3. The CUDA stream is not available until compute time, so TRT EP captures graphs inside
+  //    compute functions rather than in OnRunStart/OnRunEnd. Passing an annotation id from
+  //    OrtRunOptions would require wiring OnRunStart/OnRunEnd callbacks and storing the id as
+  //    thread-local state, adding complexity without clear benefit for TRT workloads.
+  //
+  // Note: Unlike the CUDA plugin EP which creates a dedicated per-thread graph_stream and passes
+  // it to CudaGraphManager at construction time, TRT EP receives the CUDA stream from ORT at
+  // compute time (via OrtKernelContext). Therefore, SetStream() must be called before each capture.
+  bool cuda_graph_enable_ = false;
+  CudaGraphManager cuda_graph_;
+  // Warm-up runs before graph capture. TRT EP needs fewer warm-up runs than CUDA EP
+  // because TRT handles its own memory allocation during engine execution.
+  const int min_num_runs_before_cuda_graph_capture_ = 1;
+
+  bool IsGraphCaptureAllowed(CudaGraphAnnotation_t graph_annotation_id = kCudaGraphAnnotationDefault) const {
+    return cuda_graph_.IsGraphCaptureAllowed(graph_annotation_id, min_num_runs_before_cuda_graph_capture_);
+  }
+
+  bool IsGraphCaptured(CudaGraphAnnotation_t graph_annotation_id = kCudaGraphAnnotationDefault) const {
+    return cuda_graph_.IsGraphCaptured(graph_annotation_id);
+  }
+
+  void CaptureBegin(CudaGraphAnnotation_t graph_annotation_id = kCudaGraphAnnotationDefault) {
+    cuda_graph_.CaptureBegin(graph_annotation_id);
+  }
+
+  void CaptureEnd(CudaGraphAnnotation_t graph_annotation_id = kCudaGraphAnnotationDefault) {
+    cuda_graph_.CaptureEnd(graph_annotation_id);
+  }
+
+  OrtStatus* ReplayGraph(CudaGraphAnnotation_t graph_annotation_id = kCudaGraphAnnotationDefault, bool sync = true) {
+    return cuda_graph_.Replay(graph_annotation_id, sync);
+  }
+
+  void IncrementRegularRunCountBeforeGraphCapture(CudaGraphAnnotation_t graph_annotation_id = kCudaGraphAnnotationDefault) {
+    cuda_graph_.IncrementRegularRunCount(graph_annotation_id);
+  }
+
  private:
   static const char* ORT_API_CALL GetNameImpl(const OrtEp* this_ptr) noexcept;
   static OrtStatus* ORT_API_CALL GetCapabilityImpl(OrtEp* this_ptr, const OrtGraph* graph,
@@ -327,7 +373,6 @@ struct TensorrtExecutionProvider : public OrtEp, public ApiPtrs {
   bool timing_cache_enable_ = false;
   bool force_timing_cache_match_ = false;
   bool detailed_build_log_ = false;
-  bool cuda_graph_enable_ = false;
   std::string cache_prefix_;
   bool engine_hw_compatible_ = false;
   std::string op_types_to_exclude_;
@@ -373,20 +418,6 @@ struct TensorrtExecutionProvider : public OrtEp, public ApiPtrs {
 
   // Call cudaStreamSynchronize() after TRT enqueueV3()
   mutable bool sync_stream_after_enqueue_ = true;
-
-  // TODO: Add support for CUDA graph for plugin ep.
-  /*
-  CUDAGraph cuda_graph_;
-  bool is_graph_captured_ = false;
-  int regular_run_count_before_graph_capture_ = 0;
-  // There is chance (currently only happens in CUDA EP) that the second regular run allocates GPU memory for causes like:
-  // (1) memory pattern is enabled. (2) arena allocation for stream.
-  // Since no GPU memory allocation is allowed during graph capturing, we need at least two regular runs
-  // to allocate enough memory in Arena before graph capturing.
-  const int min_num_runs_before_cuda_graph_capture_ = 1;  // required min regular runs before graph capture for the necessary memory allocations.
-  */
-
-  bool IsGraphCaptureAllowed() const { return false; };
 
   nvinfer1::IBuilder* GetBuilder(TensorrtLogger& trt_logger) const;
 

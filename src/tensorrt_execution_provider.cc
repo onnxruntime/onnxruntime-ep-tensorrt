@@ -3161,6 +3161,7 @@ OrtStatus* TRTEpNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_ptr, void*
   auto onnx_external_data_bytestream_size = trt_state->onnx_external_data_bytestream_size;
 
   auto sync_stream_after_enqueue = trt_state->sync_stream_after_enqueue;
+  auto cuda_graph_enable = trt_state->cuda_graph_enable;
 
   int num_inputs = static_cast<int>(input_indexes.size());
   int num_outputs = static_cast<int>(output_indexes.size());
@@ -3758,17 +3759,15 @@ OrtStatus* TRTEpNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_ptr, void*
     trt_context->setDeviceMemory((*context_memory).get());
   }
 
-  // TODO: Add support for CUDA graph for plugin ep.
-  /*
   // Start CUDA graph capture.
   // Note: The reason we don't put graph capture in OnRunStart() like CUDA EP does is because
   // current ORT TRT doesn't get cuda stream until compute time and graph capture requires cuda stream.
-  if (cuda_graph_enable_ && IsGraphCaptureAllowed() && !IsGraphCaptured(0)) {
-    // LOGS_DEFAULT(INFO) << "Capturing the cuda graph for this model";
-    cuda_graph_.SetStream(stream);
-    CaptureBegin(0);
+  // We use the default annotation id (0). See tensorrt_execution_provider.h for why TRT EP does not
+  // support GetGraphAnnotationId().
+  if (cuda_graph_enable && ep.IsGraphCaptureAllowed() && !ep.IsGraphCaptured(0)) {
+    ep.cuda_graph_.SetStream(stream);
+    ep.CaptureBegin(0);
   }
-  */
 
   // Run TRT inference
   if (!trt_context->enqueueV3(stream)) {
@@ -3851,24 +3850,31 @@ OrtStatus* TRTEpNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_ptr, void*
     }
   }
 
-  // TODO: Add support for CUDA graph for plugin ep.
-  /*
   // End CUDA graph capture.
   // Note: One reason we don't put end of graph capture in OnRunEnd() like CUDA EP does is because of cuda stream
   // mentioned in graph capture above, another reason is because OnRunEnd() is not synchronized with OnRunStart() and
   // ExecuteGraph() per inference_session.cc. It's safe to start/end CUDA graph capture in compute_func() here since
   // cuda graph object is maintained by a per thread basis.
-  if (cuda_graph_enable_ && !IsGraphCaptured(0)) {
-    if (IsGraphCaptureAllowed()) {
-      CaptureEnd(0);
+  if (cuda_graph_enable && !ep.IsGraphCaptured(0)) {
+    if (ep.IsGraphCaptureAllowed()) {
+      ep.CaptureEnd(0);
       // CUDA work issued to a capturing stream doesn't actually run on the GPU,
       // so run the captured graph here to actually execute the work.
-      ORT_RETURN_IF_ERROR(ReplayGraph(0));
+      auto replay_status = ep.ReplayGraph(0);
+      if (replay_status != nullptr) {
+        return replay_status;
+      }
     } else {
-      IncrementRegularRunCountBeforeGraphCapture();
+      ep.IncrementRegularRunCountBeforeGraphCapture();
     }
   }
-  */
+
+  if (cuda_graph_enable && ep.IsGraphCaptured(0)) {
+    auto replay_status = ep.ReplayGraph(0);
+    if (replay_status != nullptr) {
+      return replay_status;
+    }
+  }
 
   return nullptr;
 }
@@ -3931,6 +3937,7 @@ OrtStatus* TRTEpEpContextNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_p
   auto max_context_mem_size_ptr = trt_state->max_context_mem_size_ptr;
   auto context_memory = trt_state->context_memory;
   auto sync_stream_after_enqueue = trt_state->sync_stream_after_enqueue;
+  auto cuda_graph_enable = ep.cuda_graph_enable_;
   int num_outputs = static_cast<int>(output_indexes.size());
   std::unordered_map<std::string, std::vector<int32_t>> shape_tensor_values;        // This map holds "shape tensor -> shape values" for the shape tensor input across this inference run
   std::unordered_map<std::string, std::vector<int64_t>> shape_tensor_values_int64;  // same as above but for int64 shape tensor input
@@ -4050,17 +4057,15 @@ OrtStatus* TRTEpEpContextNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_p
     trt_context->setDeviceMemory((*context_memory).get());
   }
 
-  // TODO: Add support for CUDA graph for plugin ep.
-  /*
   // Start CUDA graph capture.
   // Note: The reason we don't put graph capture in OnRunStart() like CUDA EP does is because
   // current ORT TRT doesn't get cuda stream until compute time and graph capture requires cuda stream.
-  if (cuda_graph_enable_ && IsGraphCaptureAllowed() && !IsGraphCaptured(0)) {
-    // LOGS_DEFAULT(INFO) << "Capturing the cuda graph for this model";
-    cuda_graph_.SetStream(stream);
-    CaptureBegin(0);
+  // We use the default annotation id (0). See tensorrt_execution_provider.h for why TRT EP does not
+  // support GetGraphAnnotationId().
+  if (cuda_graph_enable && ep.IsGraphCaptureAllowed() && !ep.IsGraphCaptured(0)) {
+    ep.cuda_graph_.SetStream(stream);
+    ep.CaptureBegin(0);
   }
-  */
 
   // Run TRT inference
   if (!trt_context->enqueueV3(stream)) {
@@ -4143,24 +4148,31 @@ OrtStatus* TRTEpEpContextNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_p
     }
   }
 
-  // TODO: Add support for CUDA graph for plugin ep.
-  /*
   // End CUDA graph capture.
   // Note: One reason we don't put end of graph capture in OnRunEnd() like CUDA EP does is because of cuda stream
   // mentioned in graph capture above, another reason is because OnRunEnd() is not synchronized with OnRunStart() and
   // ExecuteGraph() per inference_session.cc. It's safe to start/end CUDA graph capture in compute_func() here since
   // cuda graph object is maintained by a per thread basis.
-  if (cuda_graph_enable_ && !IsGraphCaptured(0)) {
-    if (IsGraphCaptureAllowed()) {
-      CaptureEnd(0);
+  if (cuda_graph_enable && !ep.IsGraphCaptured(0)) {
+    if (ep.IsGraphCaptureAllowed()) {
+      ep.CaptureEnd(0);
       // CUDA work issued to a capturing stream doesn't actually run on the GPU,
       // so run the captured graph here to actually execute the work.
-      ORT_RETURN_IF_ERROR(ReplayGraph(0));
+      auto replay_status = ep.ReplayGraph(0);
+      if (replay_status != nullptr) {
+        return replay_status;
+      }
     } else {
-      IncrementRegularRunCountBeforeGraphCapture();
+      ep.IncrementRegularRunCountBeforeGraphCapture();
     }
   }
-  */
+
+  if (cuda_graph_enable && ep.IsGraphCaptured(0)) {
+    auto replay_status = ep.ReplayGraph(0);
+    if (replay_status != nullptr) {
+      return replay_status;
+    }
+  }
 
   return nullptr;
 }

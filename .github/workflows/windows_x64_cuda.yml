@@ -104,12 +104,18 @@ jobs:
           -DCMAKE_CUDA_COMPILER=${{ runner.temp }}\v${{ matrix.cuda_version }}\bin\nvcc.exe ^
           -DCMAKE_CUDA_ARCHITECTURES=${{ env.CMAKE_CUDA_ARCHITECTURES }} ^
           -DTENSORRT_HOME=${{ runner.temp }}\TensorRT-${{ matrix.trt_version }}.Windows.win10.cuda-${{ matrix.cuda_version }} ^
+          -DORTTensorRTEp_BUILD_TESTS=ON ^
           -S . -B out/build
         if %errorlevel% neq 0 exit /b %errorlevel%
 
         cmake --build out/build -j %NUMBER_OF_PROCESSORS%
         if %errorlevel% neq 0 exit /b %errorlevel%
         cmake --install out/build
+
+        :: Copy test binary to install directory for artifact upload
+        copy out\build\trt_ep_tests.exe out\%ARTIFACT_NAME%\bin\ 2>nul || (
+          copy out\build\%BUILD_TYPE%\trt_ep_tests.exe out\%ARTIFACT_NAME%\bin\ 2>nul
+        )
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v7
@@ -327,6 +333,24 @@ jobs:
           exit $lastExitCode
         }
 
+    - name: Run CUDA graph tests
+      shell: pwsh
+      env:
+        TRT_EP_LIBRARY_PATH: ${{ env.TRTEP_LIBRARY_PATH }}
+      run: |
+        $testExe = "${{ github.workspace }}\orttrtep\bin\trt_ep_tests.exe"
+        if (Test-Path $testExe) {
+          # Copy onnxruntime.dll to same directory as test exe so it's found
+          Copy-Item "${{ github.workspace }}\onnxruntime\onnxruntime.dll" `
+                    "${{ github.workspace }}\orttrtep\bin\onnxruntime.dll" -ErrorAction SilentlyContinue
+          & $testExe --gtest_output=xml:cuda_graph_test_results.xml
+          if ($lastExitCode -ne 0) {
+            exit $lastExitCode
+          }
+        } else {
+          Write-Warning "trt_ep_tests.exe not found, skipping CUDA graph tests"
+        }
+
     - name: Upload build artifacts
       if: ${{ !cancelled() }}
       uses: actions/upload-artifact@v7
@@ -335,3 +359,4 @@ jobs:
         path: |
             ${{ env.ARTIFACT_NAME }}.xml
             ${{ env.ARTIFACT_NAME }}.log
+            cuda_graph_test_results.xml

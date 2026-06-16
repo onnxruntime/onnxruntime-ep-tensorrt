@@ -3838,6 +3838,18 @@ OrtStatus* TRTEpNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_ptr, void*
     }
   }
 
+  // Unregister DLA tensor addresses so cuDLA releases its cudlaMemRegister
+  // hold on ORT's pooled buffers before the allocator recycles the VA.
+  // setTensorAddress(nullptr) must precede any cudaFree on these pointers.
+  if (trt_state->dla_enable) {
+    for (size_t i = 0, end = output_binding_names.size(); i < end; ++i) {
+      trt_context->setTensorAddress(output_binding_names[i], nullptr);
+    }
+    for (size_t i = 0, end = input_binding_names.size(); i < end; ++i) {
+      trt_context->setTensorAddress(input_binding_names[i], nullptr);
+    }
+  }
+
   // End CUDA graph capture.
   // Note: One reason we don't put end of graph capture in OnRunEnd() like CUDA EP does is because of cuda stream
   // mentioned in graph capture above, another reason is because OnRunEnd() is not synchronized with OnRunStart() and
@@ -3861,18 +3873,6 @@ OrtStatus* TRTEpNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_ptr, void*
     auto replay_status = ep.ReplayGraph(0);
     if (replay_status != nullptr) {
       return replay_status;
-    }
-  }
-
-  // Unregister DLA tensor addresses so cuDLA releases its cudlaMemRegister
-  // hold on ORT's pooled buffers before the allocator recycles the VA.
-  // setTensorAddress(nullptr) must precede any cudaFree on these pointers.
-  if (trt_state->dla_enable) {
-    for (size_t i = 0, end = output_binding_names.size(); i < end; ++i) {
-      trt_context->setTensorAddress(output_binding_names[i], nullptr);
-    }
-    for (size_t i = 0, end = input_binding_names.size(); i < end; ++i) {
-      trt_context->setTensorAddress(input_binding_names[i], nullptr);
     }
   }
 

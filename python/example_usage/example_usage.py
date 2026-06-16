@@ -1,8 +1,8 @@
+from pathlib import Path
+
+import numpy as np
 import onnxruntime as ort
 import onnxruntime_ep_tensorrt as tensorrt_ep
-import numpy as np
-
-from pathlib import Path
 
 script_dir = Path(__file__).parent
 
@@ -37,7 +37,7 @@ ep_options = {}
 # Equivalent to the C API's SessionOptionsAppendExecutionProvider_V2 that appends the plugin EP to the session options
 sess_options.add_provider_for_devices(selected_ep_devices, ep_options)
 
-assert sess_options.has_providers() == True
+assert sess_options.has_providers()
 
 # Create ORT session with the plugin EP
 model_path = str(script_dir / "mul.onnx")
@@ -46,7 +46,7 @@ sess = ort.InferenceSession(model_path, sess_options=sess_options)
 # Run the model
 input = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=np.float32)
 print(f"input:\n{input}")
-output = sess.run([], {'x': input, 'y': input})
+output = sess.run([], {"x": input, "y": input})
 print(f"output:\n{output[0]}")
 
 del sess

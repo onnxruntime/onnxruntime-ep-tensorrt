@@ -94,4 +94,4 @@ static constexpr const char* kOnnxDomain = "";
 // Defines a function of type BuildKernelCreateInfoFn for a kernel implementation with a start version.
 #define ONNX_OPERATOR_KERNEL_EX(name, domain, version, builder, kernel_class) \
   ONNX_OPERATOR_VERSIONED_KERNEL_EX(name, domain, version, version, builder, kernel_class)
-}
+}  // namespace trt_ep

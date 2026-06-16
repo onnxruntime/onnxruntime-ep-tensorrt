@@ -79,10 +79,10 @@ struct TensorrtExecutionProviderFactory : public OrtEpFactory, public ApiPtrs {
   OrtKernelRegistry* kernel_registry_ = nullptr;
 
   struct HardwareDeviceKey {
-    OrtHardwareDeviceType type{ OrtHardwareDeviceType::OrtHardwareDeviceType_CPU };
-    uint32_t vendor_id{ 0 };
-    uint32_t device_id{ 0 };  // PCI device ID — identifies the hardware model, NOT a unique device
-    int cuda_ordinal{ -1 };   // CUDA ordinal — unique per physical GPU on this host
+    OrtHardwareDeviceType type{OrtHardwareDeviceType::OrtHardwareDeviceType_CPU};
+    uint32_t vendor_id{0};
+    uint32_t device_id{0};  // PCI device ID -- identifies the hardware model, NOT a unique device
+    int cuda_ordinal{-1};   // CUDA ordinal -- unique per physical GPU on this host
 
     bool operator==(const HardwareDeviceKey& other) const noexcept {
       return type == other.type &&
@@ -107,9 +107,9 @@ struct TensorrtExecutionProviderFactory : public OrtEpFactory, public ApiPtrs {
                                          int cuda_ordinal);
 
   struct DeviceCacheEntry {
-    int cuda_device_id{ -1 };
-    Ort::MemoryInfo device_memory_info{ nullptr };
-    Ort::MemoryInfo pinned_memory_info{ nullptr };
+    int cuda_device_id{-1};
+    Ort::MemoryInfo device_memory_info{nullptr};
+    Ort::MemoryInfo pinned_memory_info{nullptr};
   };
 
   // Per-physical-device cache. The key includes the CUDA ordinal to distinguish

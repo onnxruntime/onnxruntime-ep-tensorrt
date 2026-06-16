@@ -112,9 +112,12 @@ jobs:
         if %errorlevel% neq 0 exit /b %errorlevel%
         cmake --install out/build
 
-        :: Copy test binary to install directory for artifact upload
+        :: Copy test binary and testdata to install directory for artifact upload
         copy out\build\trt_ep_tests.exe out\%ARTIFACT_NAME%\bin\ 2>nul || (
           copy out\build\%BUILD_TYPE%\trt_ep_tests.exe out\%ARTIFACT_NAME%\bin\ 2>nul
+        )
+        xcopy out\build\testdata out\%ARTIFACT_NAME%\bin\testdata\ /E /I /Q 2>nul || (
+          xcopy out\build\%BUILD_TYPE%\testdata out\%ARTIFACT_NAME%\bin\testdata\ /E /I /Q 2>nul
         )
 
     - name: Upload artifacts
@@ -333,22 +336,23 @@ jobs:
           exit $lastExitCode
         }
 
-    - name: Run CUDA graph tests
+    - name: Run unit tests
       shell: pwsh
       env:
         TRT_EP_LIBRARY_PATH: ${{ env.TRTEP_LIBRARY_PATH }}
+        TESTDATA_DIR: '${{ github.workspace }}\orttrtep\bin\testdata'
       run: |
         $testExe = "${{ github.workspace }}\orttrtep\bin\trt_ep_tests.exe"
         if (Test-Path $testExe) {
           # Copy onnxruntime.dll to same directory as test exe so it's found
           Copy-Item "${{ github.workspace }}\onnxruntime\onnxruntime.dll" `
                     "${{ github.workspace }}\orttrtep\bin\onnxruntime.dll" -ErrorAction SilentlyContinue
-          & $testExe --gtest_output=xml:cuda_graph_test_results.xml
+          & $testExe --gtest_output=xml:trt_ep_unit_test_results.xml
           if ($lastExitCode -ne 0) {
             exit $lastExitCode
           }
         } else {
-          Write-Warning "trt_ep_tests.exe not found, skipping CUDA graph tests"
+          Write-Warning "trt_ep_tests.exe not found, skipping unit tests"
         }
 
     - name: Upload build artifacts
@@ -359,4 +363,4 @@ jobs:
         path: |
             ${{ env.ARTIFACT_NAME }}.xml
             ${{ env.ARTIFACT_NAME }}.log
-            cuda_graph_test_results.xml
+            trt_ep_unit_test_results.xml

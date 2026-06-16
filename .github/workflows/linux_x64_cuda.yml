@@ -184,8 +184,9 @@ jobs:
         cmake --build out/build -j `nproc`
         cmake --install out/build
 
-        # Copy test binary to install directory for artifact upload
+        # Copy test binary and testdata to install directory for artifact upload
         cp out/build/trt_ep_tests out/${ARTIFACT_NAME}/bin/ 2>/dev/null || true
+        cp -r out/build/testdata out/${ARTIFACT_NAME}/bin/testdata 2>/dev/null || true
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v7
@@ -374,17 +375,18 @@ jobs:
           "$GITHUB_WORKSPACE/onnxruntime/onnxruntime_provider_test" \
           "${{ env.ARTIFACT_NAME }}"
 
-    - name: Run CUDA graph tests
+    - name: Run unit tests
       env:
         TRT_EP_LIBRARY_PATH: ${{ env.TRTEP_LIBRARY_PATH }}
+        TESTDATA_DIR: "${{ github.workspace }}/orttrtep/bin/testdata"
         LD_LIBRARY_PATH: "${{ github.workspace }}/onnxruntime:${{ github.workspace }}/orttrtep/lib:$LD_LIBRARY_PATH"
       run: |
         TEST_EXE="$GITHUB_WORKSPACE/orttrtep/bin/trt_ep_tests"
         if [ -f "$TEST_EXE" ]; then
           chmod +x "$TEST_EXE"
-          "$TEST_EXE" --gtest_output=xml:cuda_graph_test_results.xml
+          "$TEST_EXE" --gtest_output=xml:trt_ep_unit_test_results.xml
         else
-          echo "WARNING: trt_ep_tests not found, skipping CUDA graph tests"
+          echo "WARNING: trt_ep_tests not found, skipping unit tests"
         fi
 
     - name: Upload build artifacts
@@ -395,4 +397,4 @@ jobs:
         path: |
             ${{ env.ARTIFACT_NAME }}.xml
             ${{ env.ARTIFACT_NAME }}.log
-            cuda_graph_test_results.xml
+            trt_ep_unit_test_results.xml

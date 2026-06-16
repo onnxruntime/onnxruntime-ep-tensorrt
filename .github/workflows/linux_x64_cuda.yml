@@ -179,9 +179,13 @@ jobs:
             -DCMAKE_CUDA_ARCHITECTURES=${CMAKE_CUDA_ARCHITECTURES}  \
             -DCMAKE_CUDA_COMPILER=${CUDA_HOME}/bin/nvcc             \
             -DTENSORRT_HOME=${TRT_HOME}                             \
+            -DORTTensorRTEp_BUILD_TESTS=ON                         \
             -S . -B out/build
         cmake --build out/build -j `nproc`
         cmake --install out/build
+
+        # Copy test binary to install directory for artifact upload
+        cp out/build/trt_ep_tests out/${ARTIFACT_NAME}/bin/ 2>/dev/null || true
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v7
@@ -370,6 +374,19 @@ jobs:
           "$GITHUB_WORKSPACE/onnxruntime/onnxruntime_provider_test" \
           "${{ env.ARTIFACT_NAME }}"
 
+    - name: Run CUDA graph tests
+      env:
+        TRT_EP_LIBRARY_PATH: ${{ env.TRTEP_LIBRARY_PATH }}
+        LD_LIBRARY_PATH: "${{ github.workspace }}/onnxruntime:${{ github.workspace }}/orttrtep/lib:$LD_LIBRARY_PATH"
+      run: |
+        TEST_EXE="$GITHUB_WORKSPACE/orttrtep/bin/trt_ep_tests"
+        if [ -f "$TEST_EXE" ]; then
+          chmod +x "$TEST_EXE"
+          "$TEST_EXE" --gtest_output=xml:cuda_graph_test_results.xml
+        else
+          echo "WARNING: trt_ep_tests not found, skipping CUDA graph tests"
+        fi
+
     - name: Upload build artifacts
       if: ${{ !cancelled() }}
       uses: actions/upload-artifact@v7
@@ -378,3 +395,4 @@ jobs:
         path: |
             ${{ env.ARTIFACT_NAME }}.xml
             ${{ env.ARTIFACT_NAME }}.log
+            cuda_graph_test_results.xml

@@ -324,9 +324,14 @@ jobs:
       run: |
         $testExe = "${{ github.workspace }}\orttrtep\bin\trt_ep_tests.exe"
         if (Test-Path $testExe) {
-          # Copy onnxruntime.dll to same directory as test exe so it's found
-          Copy-Item "${{ github.workspace }}\onnxruntime\onnxruntime.dll" `
-                    "${{ github.workspace }}\orttrtep\bin\onnxruntime.dll" -ErrorAction SilentlyContinue
+          # Find and copy onnxruntime.dll to same directory as test exe so it's found
+          $ortDll = Get-ChildItem -Path "${{ github.workspace }}\onnxruntime" -Filter "onnxruntime.dll" -Recurse | Select-Object -First 1
+          if ($ortDll) {
+            Copy-Item $ortDll.FullName "${{ github.workspace }}\orttrtep\bin\onnxruntime.dll" -Force
+            Write-Host "Copied onnxruntime.dll from $($ortDll.FullName)"
+          } else {
+            Write-Warning "onnxruntime.dll not found in ORT artifacts"
+          }
 
           & $testExe --gtest_output=xml:trt_ep_unit_test_results.xml
           if ($lastExitCode -ne 0) {

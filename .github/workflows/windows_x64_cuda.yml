@@ -316,26 +316,6 @@ jobs:
         python-version: '3.x'
         architecture: x64
 
-    - name: Run tests
-      shell: pwsh
-      env:
-        ORT_UNIT_TEST_MAIN_LOG_LEVEL: 0
-        ORT_TRT_EP_ENABLE_BUILDER_PLACEHOLDER: 1
-        ORT_UNIT_TEST_MAIN_DYNAMIC_PLUGIN_EP_CONFIG_JSON: |
-          {
-            "ep_library_registration_name": "NvTensorRtRtx",
-            "ep_library_path": ${{ toJson(env.TRTEP_LIBRARY_PATH) }},
-            "selected_ep_name": "NvTensorRtRtx",
-            "default_ep_options": {}
-          }
-      run: |
-        & python ${{ github.workspace }}\.github\scripts\test_runner.py `
-          "${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe" `
-          "${{ env.ARTIFACT_NAME }}"
-        if ($lastExitCode -ne 0) {
-          exit $lastExitCode
-        }
-
     - name: Run unit tests
       shell: pwsh
       env:
@@ -354,6 +334,26 @@ jobs:
           }
         } else {
           Write-Warning "trt_ep_tests.exe not found, skipping unit tests"
+        }
+
+    - name: Run onnxruntime_provider_test
+      shell: pwsh
+      env:
+        ORT_UNIT_TEST_MAIN_LOG_LEVEL: 0
+        ORT_TRT_EP_ENABLE_BUILDER_PLACEHOLDER: 1
+        ORT_UNIT_TEST_MAIN_DYNAMIC_PLUGIN_EP_CONFIG_JSON: |
+          {
+            "ep_library_registration_name": "NvTensorRtRtx",
+            "ep_library_path": ${{ toJson(env.TRTEP_LIBRARY_PATH) }},
+            "selected_ep_name": "NvTensorRtRtx",
+            "default_ep_options": {}
+          }
+      run: |
+        & python ${{ github.workspace }}\.github\scripts\test_runner.py `
+          "${{ github.workspace }}\onnxruntime\onnxruntime_provider_test.exe" `
+          "${{ env.ARTIFACT_NAME }}"
+        if ($lastExitCode -ne 0) {
+          exit $lastExitCode
         }
 
     - name: Upload build artifacts

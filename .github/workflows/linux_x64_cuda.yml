@@ -357,7 +357,21 @@ jobs:
       run: |
         echo "TRTEP_LIBRARY_PATH=$GITHUB_WORKSPACE/orttrtep/lib/libORTTensorRTEp.so" >> $GITHUB_ENV
 
-    - name: Run tests
+    - name: Run unit tests
+      env:
+        TRT_EP_LIBRARY_PATH: ${{ env.TRTEP_LIBRARY_PATH }}
+        TESTDATA_DIR: "${{ github.workspace }}/orttrtep/bin/testdata"
+        LD_LIBRARY_PATH: "${{ github.workspace }}/onnxruntime:${{ github.workspace }}/orttrtep/lib:$LD_LIBRARY_PATH"
+      run: |
+        TEST_EXE="$GITHUB_WORKSPACE/orttrtep/bin/trt_ep_tests"
+        if [ -f "$TEST_EXE" ]; then
+          chmod +x "$TEST_EXE"
+          "$TEST_EXE" --gtest_output=xml:trt_ep_unit_test_results.xml
+        else
+          echo "WARNING: trt_ep_tests not found, skipping unit tests"
+        fi
+
+    - name: Run onnxruntime_provider_test
       env:
         ORT_UNIT_TEST_MAIN_LOG_LEVEL: 0
         ORT_TRT_EP_ENABLE_BUILDER_PLACEHOLDER: 1
@@ -374,20 +388,6 @@ jobs:
         python "$GITHUB_WORKSPACE/.github/scripts/test_runner.py"   \
           "$GITHUB_WORKSPACE/onnxruntime/onnxruntime_provider_test" \
           "${{ env.ARTIFACT_NAME }}"
-
-    - name: Run unit tests
-      env:
-        TRT_EP_LIBRARY_PATH: ${{ env.TRTEP_LIBRARY_PATH }}
-        TESTDATA_DIR: "${{ github.workspace }}/orttrtep/bin/testdata"
-        LD_LIBRARY_PATH: "${{ github.workspace }}/onnxruntime:${{ github.workspace }}/orttrtep/lib:$LD_LIBRARY_PATH"
-      run: |
-        TEST_EXE="$GITHUB_WORKSPACE/orttrtep/bin/trt_ep_tests"
-        if [ -f "$TEST_EXE" ]; then
-          chmod +x "$TEST_EXE"
-          "$TEST_EXE" --gtest_output=xml:trt_ep_unit_test_results.xml
-        else
-          echo "WARNING: trt_ep_tests not found, skipping unit tests"
-        fi
 
     - name: Upload build artifacts
       if: ${{ !cancelled() }}

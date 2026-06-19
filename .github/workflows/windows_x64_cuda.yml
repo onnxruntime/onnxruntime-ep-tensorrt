@@ -119,6 +119,10 @@ jobs:
         xcopy out\build\testdata out\%ARTIFACT_NAME%\bin\testdata\ /E /I /Q 2>nul || (
           xcopy out\build\%BUILD_TYPE%\testdata out\%ARTIFACT_NAME%\bin\testdata\ /E /I /Q 2>nul
         )
+        :: Copy onnxruntime.dll from NuGet package so unit tests can find it at runtime
+        copy out\build\_deps\ortlib-src\runtimes\win-x64\native\onnxruntime.dll out\%ARTIFACT_NAME%\bin\ 2>nul || (
+          echo WARNING: onnxruntime.dll not found at expected NuGet path
+        )
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v7
@@ -324,13 +328,19 @@ jobs:
       run: |
         $testExe = "${{ github.workspace }}\orttrtep\bin\trt_ep_tests.exe"
         if (Test-Path $testExe) {
-          # Find and copy onnxruntime.dll to same directory as test exe so it's found
-          $ortDll = Get-ChildItem -Path "${{ github.workspace }}\onnxruntime" -Filter "onnxruntime.dll" -Recurse | Select-Object -First 1
-          if ($ortDll) {
-            Copy-Item $ortDll.FullName "${{ github.workspace }}\orttrtep\bin\onnxruntime.dll" -Force
-            Write-Host "Copied onnxruntime.dll from $($ortDll.FullName)"
+          $testDir = "${{ github.workspace }}\orttrtep\bin"
+          # Ensure onnxruntime.dll is alongside test exe (may already be there from build artifact)
+          if (-not (Test-Path "$testDir\onnxruntime.dll")) {
+            # Try to find it in ORT artifacts
+            $ortDll = Get-ChildItem -Path "${{ github.workspace }}\onnxruntime" -Filter "onnxruntime.dll" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($ortDll) {
+              Copy-Item $ortDll.FullName "$testDir\onnxruntime.dll" -Force
+              Write-Host "Copied onnxruntime.dll from $($ortDll.FullName)"
+            } else {
+              Write-Warning "onnxruntime.dll not found - tests may fail with API version mismatch"
+            }
           } else {
-            Write-Warning "onnxruntime.dll not found in ORT artifacts"
+            Write-Host "onnxruntime.dll already present in test directory"
           }
 
           & $testExe --gtest_output=xml:trt_ep_unit_test_results.xml

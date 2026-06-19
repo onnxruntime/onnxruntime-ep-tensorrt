@@ -187,6 +187,8 @@ jobs:
         # Copy test binary and testdata to install directory for artifact upload
         cp out/build/trt_ep_tests out/${ARTIFACT_NAME}/bin/ 2>/dev/null || true
         cp -r out/build/testdata out/${ARTIFACT_NAME}/bin/testdata 2>/dev/null || true
+        # Copy libonnxruntime.so from NuGet package so unit tests can find it at runtime
+        cp out/build/_deps/ortlib-src/runtimes/linux-x64/native/libonnxruntime.so out/${ARTIFACT_NAME}/bin/ 2>/dev/null || true
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v7
@@ -361,7 +363,7 @@ jobs:
       env:
         TRT_EP_LIBRARY_PATH: ${{ env.TRTEP_LIBRARY_PATH }}
         TESTDATA_DIR: "${{ github.workspace }}/orttrtep/bin/testdata"
-        LD_LIBRARY_PATH: "${{ github.workspace }}/onnxruntime:${{ github.workspace }}/orttrtep/lib:$LD_LIBRARY_PATH"
+        LD_LIBRARY_PATH: "${{ github.workspace }}/orttrtep/bin:${{ github.workspace }}/onnxruntime:${{ github.workspace }}/orttrtep/lib:$LD_LIBRARY_PATH"
       run: |
         TEST_EXE="$GITHUB_WORKSPACE/orttrtep/bin/trt_ep_tests"
         if [ -f "$TEST_EXE" ]; then

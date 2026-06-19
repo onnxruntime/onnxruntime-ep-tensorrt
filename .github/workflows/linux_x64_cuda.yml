@@ -189,6 +189,8 @@ jobs:
         cp -r out/build/testdata out/${ARTIFACT_NAME}/bin/testdata 2>/dev/null || true
         # Copy libonnxruntime.so from NuGet package so unit tests can find it at runtime
         cp out/build/_deps/ortlib-src/runtimes/linux-x64/native/libonnxruntime.so out/${ARTIFACT_NAME}/bin/ 2>/dev/null || true
+        # Create versioned symlink (binary links against libonnxruntime.so.1)
+        ln -sf libonnxruntime.so out/${ARTIFACT_NAME}/bin/libonnxruntime.so.1 2>/dev/null || true
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v7

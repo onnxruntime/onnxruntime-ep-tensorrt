@@ -149,10 +149,34 @@ bool EPContextNodeReader::GraphHasCtxNode(const OrtGraph* graph, const OrtApi& o
 
   for (size_t i = 0; i < num_nodes; ++i) {
     auto node = nodes[i];
+    if (node == nullptr) continue;
 
     const char* op_type = nullptr;
     RETURN_IF_ERROR(ort_api.Node_GetOperatorType(node, &op_type));
-    if (node != nullptr && std::string(op_type) == "EPContext") {
+    if (std::string(op_type) == "EPContext") {
+      // Only match EPContext nodes that belong to this EP.
+      // If the "source" attribute is present and doesn't match, skip the node.
+      Ort::ConstNode ort_node(node);
+      Ort::ConstOpAttr source_attr;
+      OrtStatus* status = ort_node.GetAttributeByName("source", source_attr);
+      if (status == nullptr && source_attr != nullptr) {
+        if (source_attr.GetType() == OrtOpAttrType::ORT_OP_ATTR_STRING) {
+          std::string source_value;
+          OrtStatus* val_status = source_attr.GetValue<std::string>(source_value);
+          if (val_status == nullptr && !source_value.empty() &&
+              source_value != "TensorrtExecutionProvider") {
+            // Source doesn't match this EP, skip this node
+            continue;
+          }
+          if (val_status != nullptr) {
+            ort_api.ReleaseStatus(val_status);
+          }
+        }
+      }
+      if (status != nullptr) {
+        // Attribute not found — backward compatibility, treat as ours
+        ort_api.ReleaseStatus(status);
+      }
       return true;
     }
   }
@@ -192,6 +216,29 @@ OrtStatus* EPContextNodeReader::GetEpContextFromGraph(const OrtGraph& graph) {
   // ValidateEPCtxNode() already checked ENFORCE(num_nodes == 1)
   auto& node = nodes[0];
   Ort::ConstOpAttr node_attr;
+
+  // Check "source" attribute: reject EPContext nodes from other EPs
+  // (This is a secondary check; GraphHasCtxNode already filters by source.)
+  OrtStatus* source_status = node.GetAttributeByName("source", node_attr);
+  if (source_status == nullptr && node_attr != nullptr) {
+    if (node_attr.GetType() == OrtOpAttrType::ORT_OP_ATTR_STRING) {
+      std::string source_value;
+      OrtStatus* val_status = node_attr.GetValue<std::string>(source_value);
+      if (val_status == nullptr && !source_value.empty() &&
+          source_value != "TensorrtExecutionProvider") {
+        return ort_api.CreateStatus(ORT_EP_FAIL,
+            ("[TensorRT EP] EPContext node has source '" + source_value +
+             "' which does not match this EP. Skipping.").c_str());
+      }
+      if (val_status != nullptr) {
+        ort_api.ReleaseStatus(val_status);
+      }
+    }
+  }
+  if (source_status != nullptr) {
+    // "source" attribute not found — backward compatibility, proceed
+    ort_api.ReleaseStatus(source_status);
+  }
 
   // Get "embed_mode" attribute
   RETURN_IF_ERROR(node.GetAttributeByName("embed_mode", node_attr));

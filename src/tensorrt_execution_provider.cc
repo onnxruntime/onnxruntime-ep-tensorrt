@@ -1347,7 +1347,9 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
   trt_parser->setFlags(ComputeParserFlags());
   if (!trt_parser->parse(string_buf.data(), string_buf.size(), model_path_)) {
     int num_errors = trt_parser->getNbErrors();
-    std::string error_msg = "[TensorRT EP] Failed to parse the ONNX model for fused node: " + fused_node_name;
+    const char* node_name = nullptr;
+    RETURN_IF_ERROR(ort_api.Node_GetName(fused_node, &node_name));
+    std::string error_msg = "[TensorRT EP] Failed to parse the ONNX model for fused node: " + std::string(node_name ? node_name : "unknown");
     if (num_errors > 0) {
       error_msg += ". Parser error: " + std::string(trt_parser->getError(0)->desc());
     }

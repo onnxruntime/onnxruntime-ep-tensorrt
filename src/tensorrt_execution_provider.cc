@@ -100,6 +100,9 @@ TensorrtLogger& GetTensorrtLogger(bool verbose_log,
                                   const OrtApi* ort_api) {
   const auto log_level = verbose_log ? nvinfer1::ILogger::Severity::kVERBOSE : nvinfer1::ILogger::Severity::kWARNING;
   static TensorrtLogger trt_logger(ort_default_logger, ort_api, log_level);
+  // Always update the logger reference to the current session's OrtLogger,
+  // since the static trt_logger outlives individual EP/session instances.
+  trt_logger.update_logger(ort_default_logger, ort_api);
   if (log_level != trt_logger.get_level()) {
     trt_logger.set_level(verbose_log ? nvinfer1::ILogger::Severity::kVERBOSE : nvinfer1::ILogger::Severity::kWARNING);
   }

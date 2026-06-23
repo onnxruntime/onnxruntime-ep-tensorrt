@@ -26,14 +26,22 @@ namespace trt_ep {
 
 class TensorrtLogger : public nvinfer1::ILogger {
   nvinfer1::ILogger::Severity verbosity_;
-  const OrtLogger& ort_default_logger_;
+  const OrtLogger* ort_default_logger_ = nullptr;
   const OrtApi* ort_api_ = nullptr;
 
  public:
   TensorrtLogger(const OrtLogger& ort_default_logger,
                  const OrtApi* ort_api,
                  Severity verbosity = Severity::kWARNING)
-      : ort_default_logger_{ort_default_logger}, ort_api_{ort_api}, verbosity_(verbosity) {}
+      : ort_default_logger_{&ort_default_logger}, ort_api_{ort_api}, verbosity_(verbosity) {}
+
+  // Update the ORT logger reference (needed because the static TensorrtLogger
+  // outlives individual EP/session instances whose OrtLogger may be destroyed).
+  void update_logger(const OrtLogger& ort_default_logger, const OrtApi* ort_api) {
+    ort_default_logger_ = &ort_default_logger;
+    ort_api_ = ort_api;
+  }
+
   void log(Severity severity, const char* msg) noexcept override {
     if (severity <= verbosity_) {
       time_t rawtime = std::time(0);
@@ -60,9 +68,11 @@ class TensorrtLogger : public nvinfer1::ILogger {
 
       std::string message = "[" + std::string(buf) + " " + std::string(sevstr) + "] " + std::string(msg);
 
-      Ort::ThrowOnError(ort_api_->Logger_LogMessage(&ort_default_logger_,
-                                                    ort_severity,
-                                                    message.c_str(), ORT_FILE, __LINE__, __FUNCTION__));
+      if (ort_default_logger_ && ort_api_) {
+        Ort::ThrowOnError(ort_api_->Logger_LogMessage(ort_default_logger_,
+                                                      ort_severity,
+                                                      message.c_str(), ORT_FILE, __LINE__, __FUNCTION__));
+      }
     }
   }
   void set_level(Severity verbosity) {

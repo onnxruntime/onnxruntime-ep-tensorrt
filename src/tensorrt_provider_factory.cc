@@ -97,6 +97,8 @@ TensorrtExecutionProviderFactory::TensorrtExecutionProviderFactory(const char* e
   ReleaseAllocator = ReleaseAllocatorImpl;
   CreateDataTransfer = CreateDataTransferImpl;
   IsStreamAware = IsStreamAwareImpl;
+  GetNumCustomOpDomains = GetNumCustomOpDomainsImpl;
+  GetCustomOpDomains = GetCustomOpDomainsImpl;
 }
 
 TensorrtExecutionProviderFactory::~TensorrtExecutionProviderFactory() {
@@ -442,6 +444,41 @@ OrtStatus* ORT_API_CALL TensorrtExecutionProviderFactory::CreateDataTransferImpl
 
 bool ORT_API_CALL TensorrtExecutionProviderFactory::IsStreamAwareImpl(const OrtEpFactory* /*this_ptr*/) noexcept {
   return true;
+}
+
+OrtStatus* ORT_API_CALL TensorrtExecutionProviderFactory::GetNumCustomOpDomainsImpl(
+    OrtEpFactory* this_ptr, size_t* num_domains) noexcept {
+  auto* factory = static_cast<TensorrtExecutionProviderFactory*>(this_ptr);
+
+  if (factory->custom_op_domain_list_.empty()) {
+    // Note: extra_plugin_lib_paths are not available at factory level (they come from
+    // per-session provider options). Default TRT plugins are still registered here.
+    // Extra plugins loaded during EP creation will register to the TRT registry but
+    // won't add new custom op domains retroactively.
+    auto* status = trt_ep::CreateTensorRTCustomOpDomainList(
+        factory->ep_name_.c_str(), "", factory->custom_op_domain_list_);
+    if (status != nullptr) {
+      return status;
+    }
+  }
+
+  *num_domains = factory->custom_op_domain_list_.size();
+  return nullptr;
+}
+
+OrtStatus* ORT_API_CALL TensorrtExecutionProviderFactory::GetCustomOpDomainsImpl(
+    OrtEpFactory* this_ptr, OrtCustomOpDomain** domains, size_t num_domains) noexcept {
+  auto* factory = static_cast<TensorrtExecutionProviderFactory*>(this_ptr);
+
+  if (num_domains > factory->custom_op_domain_list_.size()) {
+    return Ort::GetApi().CreateStatus(ORT_INVALID_ARGUMENT, "num_domains exceeds available custom op domains");
+  }
+
+  for (size_t i = 0; i < num_domains; ++i) {
+    domains[i] = factory->custom_op_domain_list_[i];
+  }
+
+  return nullptr;
 }
 
 OrtStatus* TensorrtExecutionProviderFactory::GetKernelRegistryForEp(TensorrtExecutionProvider& ep,

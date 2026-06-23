@@ -119,6 +119,10 @@ jobs:
         xcopy out\build\testdata out\%ARTIFACT_NAME%\bin\testdata\ /E /I /Q 2>nul || (
           xcopy out\build\%BUILD_TYPE%\testdata out\%ARTIFACT_NAME%\bin\testdata\ /E /I /Q 2>nul
         )
+        :: Copy onnxruntime.dll from NuGet package so unit tests can find it at runtime
+        copy out\build\_deps\ortlib-src\runtimes\win-x64\native\onnxruntime.dll out\%ARTIFACT_NAME%\bin\ 2>nul || (
+          echo WARNING: onnxruntime.dll not found at expected NuGet path
+        )
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v7
@@ -316,7 +320,38 @@ jobs:
         python-version: '3.x'
         architecture: x64
 
-    - name: Run tests
+    - name: Run unit tests
+      shell: pwsh
+      env:
+        TRT_EP_LIBRARY_PATH: ${{ env.TRTEP_LIBRARY_PATH }}
+        TESTDATA_DIR: '${{ github.workspace }}\orttrtep\bin\testdata'
+      run: |
+        $testExe = "${{ github.workspace }}\orttrtep\bin\trt_ep_tests.exe"
+        if (Test-Path $testExe) {
+          $testDir = "${{ github.workspace }}\orttrtep\bin"
+          # Ensure onnxruntime.dll is alongside test exe (may already be there from build artifact)
+          if (-not (Test-Path "$testDir\onnxruntime.dll")) {
+            # Try to find it in ORT artifacts
+            $ortDll = Get-ChildItem -Path "${{ github.workspace }}\onnxruntime" -Filter "onnxruntime.dll" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($ortDll) {
+              Copy-Item $ortDll.FullName "$testDir\onnxruntime.dll" -Force
+              Write-Host "Copied onnxruntime.dll from $($ortDll.FullName)"
+            } else {
+              Write-Warning "onnxruntime.dll not found - tests may fail with API version mismatch"
+            }
+          } else {
+            Write-Host "onnxruntime.dll already present in test directory"
+          }
+
+          & $testExe --gtest_output=xml:trt_ep_unit_test_results.xml
+          if ($lastExitCode -ne 0) {
+            exit $lastExitCode
+          }
+        } else {
+          Write-Warning "trt_ep_tests.exe not found, skipping unit tests"
+        }
+
+    - name: Run onnxruntime_provider_test
       shell: pwsh
       env:
         ORT_UNIT_TEST_MAIN_LOG_LEVEL: 0
@@ -334,26 +369,6 @@ jobs:
           "${{ env.ARTIFACT_NAME }}"
         if ($lastExitCode -ne 0) {
           exit $lastExitCode
-        }
-
-    - name: Run unit tests
-      shell: pwsh
-      env:
-        TRT_EP_LIBRARY_PATH: ${{ env.TRTEP_LIBRARY_PATH }}
-        TESTDATA_DIR: '${{ github.workspace }}\orttrtep\bin\testdata'
-      run: |
-        $testExe = "${{ github.workspace }}\orttrtep\bin\trt_ep_tests.exe"
-        if (Test-Path $testExe) {
-          # Copy onnxruntime.dll to same directory as test exe so it's found
-          Copy-Item "${{ github.workspace }}\onnxruntime\onnxruntime.dll" `
-                    "${{ github.workspace }}\orttrtep\bin\onnxruntime.dll" -ErrorAction SilentlyContinue
-
-          & $testExe --gtest_output=xml:trt_ep_unit_test_results.xml
-          if ($lastExitCode -ne 0) {
-            exit $lastExitCode
-          }
-        } else {
-          Write-Warning "trt_ep_tests.exe not found, skipping unit tests"
         }
 
     - name: Upload build artifacts

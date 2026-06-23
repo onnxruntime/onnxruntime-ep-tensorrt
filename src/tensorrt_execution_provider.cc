@@ -100,6 +100,9 @@ TensorrtLogger& GetTensorrtLogger(bool verbose_log,
                                   const OrtApi* ort_api) {
   const auto log_level = verbose_log ? nvinfer1::ILogger::Severity::kVERBOSE : nvinfer1::ILogger::Severity::kWARNING;
   static TensorrtLogger trt_logger(ort_default_logger, ort_api, log_level);
+  // Always update the logger reference to the current session's OrtLogger,
+  // since the static trt_logger outlives individual EP/session instances.
+  trt_logger.update_logger(ort_default_logger, ort_api);
   if (log_level != trt_logger.get_level()) {
     trt_logger.set_level(verbose_log ? nvinfer1::ILogger::Severity::kVERBOSE : nvinfer1::ILogger::Severity::kWARNING);
   }
@@ -1345,7 +1348,16 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
   auto trt_parser =
       tensorrt_ptr::unique_pointer<nvonnxparser::IParser>(nvonnxparser::createParser(*trt_network, trt_logger));
   trt_parser->setFlags(ComputeParserFlags());
-  trt_parser->parse(string_buf.data(), string_buf.size(), model_path_);
+  if (!trt_parser->parse(string_buf.data(), string_buf.size(), model_path_)) {
+    int num_errors = trt_parser->getNbErrors();
+    const char* node_name = nullptr;
+    RETURN_IF_ERROR(ort_api.Node_GetName(fused_node, &node_name));
+    std::string error_msg = "[TensorRT EP] Failed to parse the ONNX model for fused node: " + std::string(node_name ? node_name : "unknown");
+    if (num_errors > 0) {
+      error_msg += ". Parser error: " + std::string(trt_parser->getError(0)->desc());
+    }
+    return ort_api.CreateStatus(ORT_EP_FAIL, error_msg.c_str());
+  }
   if (max_workspace_size_ > 0) {
     trt_config->setMemoryPoolLimit(nvinfer1::MemoryPoolType::kWORKSPACE, max_workspace_size_);
   }
@@ -2080,14 +2092,24 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
   // Create output to index and type maps
   // TRT network output -> ORT fused_node output index
   const auto& graph_output = model_proto.graph().output();
+
+  // Build a name-to-index map for graph proto outputs to safely look up by name
+  std::unordered_map<std::string, int> graph_output_name_to_idx;
+  for (int i = 0; i < graph_output.size(); ++i) {
+    graph_output_name_to_idx[graph_output[i].name()] = i;
+  }
+
   for (int i = 0; i < num_outputs; ++i) {
     const std::string& output_name = trt_network->getOutput(i)->getName();
     const auto& iter = output_map.find(output_name);
     if (iter != output_map.end()) {
       output_indexes[output_name] = iter->second;
     }
-    const auto& tensor_type = graph_output[i].type().tensor_type();
-    output_types[output_name] = tensor_type.elem_type();
+    const auto& graph_out_iter = graph_output_name_to_idx.find(output_name);
+    if (graph_out_iter != graph_output_name_to_idx.end()) {
+      const auto& tensor_type = graph_output[graph_out_iter->second].type().tensor_type();
+      output_types[output_name] = tensor_type.elem_type();
+    }
   }
 
   // Save TRT engine, other TRT objects and input/output info to map

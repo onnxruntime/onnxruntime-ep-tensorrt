@@ -18,7 +18,7 @@ public static class TensorRTEp
         string rootDir = GetNativeDirectory();
         string osArch = $"{GetOSTag()}-{GetArchTag()}";
         string epDllPath = Path.GetFullPath(Path.Combine(rootDir, "runtimes", osArch,
-                                                         "native", "ORTTensorRTEp.dll"));
+                                                         "native", "onnxruntime_ep_tensorrt.dll"));
 
         if (!File.Exists(epDllPath))
         {

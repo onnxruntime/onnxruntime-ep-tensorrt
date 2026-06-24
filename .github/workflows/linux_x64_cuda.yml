@@ -179,7 +179,7 @@ jobs:
             -DCMAKE_CUDA_ARCHITECTURES=${CMAKE_CUDA_ARCHITECTURES}  \
             -DCMAKE_CUDA_COMPILER=${CUDA_HOME}/bin/nvcc             \
             -DTENSORRT_HOME=${TRT_HOME}                             \
-            -DORTTensorRTEp_BUILD_TESTS=ON                         \
+            -Donnxruntime_ep_tensorrt_BUILD_TESTS=ON                         \
             -S . -B out/build
         cmake --build out/build -j `nproc`
         cmake --install out/build
@@ -359,7 +359,7 @@ jobs:
 
     - name: Setup library path
       run: |
-        echo "TRTEP_LIBRARY_PATH=$GITHUB_WORKSPACE/orttrtep/lib/libORTTensorRTEp.so" >> $GITHUB_ENV
+        echo "TRTEP_LIBRARY_PATH=$GITHUB_WORKSPACE/orttrtep/lib/libonnxruntime_ep_tensorrt.so" >> $GITHUB_ENV
 
     - name: Run unit tests
       env:

@@ -13,7 +13,7 @@ Follow instructions [here](../README.md#build-instructions) to build the native 
 
 ### Build the Python package
 
-Set the environment variable `TENSORRT_PLUGIN_EP_LIBRARY_PATH` to the path to the native plugin EP shared library. E.g., `ORTTensorRTEp.dll` on Windows or `libtensorrt_plugin_ep.so` on Linux.
+Set the environment variable `TENSORRT_PLUGIN_EP_LIBRARY_PATH` to the path to the native plugin EP shared library. E.g., `onnxruntime_ep_tensorrt.dll` on Windows or `libonnxruntime_ep_tensorrt.so` on Linux.
 
 Run `setup.py` from this directory.
 

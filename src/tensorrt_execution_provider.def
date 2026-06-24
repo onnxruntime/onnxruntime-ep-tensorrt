@@ -1,4 +1,4 @@
-LIBRARY "ORTTensorRTEp.dll"
+LIBRARY "onnxruntime_ep_tensorrt.dll"
 EXPORTS
  CreateEpFactories @1
  ReleaseEpFactory @2

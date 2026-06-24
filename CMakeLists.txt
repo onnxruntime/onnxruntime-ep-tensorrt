@@ -12,7 +12,7 @@
 cmake_minimum_required(VERSION 3.25)
 cmake_policy(SET CMP0091 NEW) # Use CMAKE_MSVC_RUNTIME_LIBRARY
 cmake_policy(SET CMP0141 NEW) # Use CMAKE_MSVC_DEBUG_INFORMATION_FORMAT
-project(ORTTensorRTEp VERSION 1.0.0 LANGUAGES CXX)
+project(onnxruntime_ep_tensorrt VERSION 1.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -43,11 +43,11 @@ if(MSVC)
   set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 endif()
 
-option(ORTTensorRTEp_INSTALL "Install ORTTensorRTEp binaries and files" ON)
-option(ORTTensorRTEp_OBJECT_CACHE "Enable object caching using either sccache/ccache" ON)
+option(onnxruntime_ep_tensorrt_INSTALL "Install onnxruntime_ep_tensorrt binaries and files" ON)
+option(onnxruntime_ep_tensorrt_OBJECT_CACHE "Enable object caching using either sccache/ccache" ON)
 option(CMAKE_CUDA_ARCHITECTURES "Version of CUDA architectures to enable" 86)
 
-if(ORTTensorRTEp_OBJECT_CACHE)
+if(onnxruntime_ep_tensorrt_OBJECT_CACHE)
   find_program(SCCACHE_PROGRAM sccache)
   find_program(CCACHE_PROGRAM ccache)
   # Prioritize sccache on Windows & ccache on non-Windows
@@ -94,7 +94,7 @@ endif()
 enable_language(CUDA) # via nvcc to get the CUDA tool kit
 find_package(CUDAToolkit REQUIRED)
 
-file(GLOB ORTTensorRTEp_SRC CONFIGURE_DEPENDS
+file(GLOB onnxruntime_ep_tensorrt_SRC CONFIGURE_DEPENDS
   "./src/*.cc"
   "./src/kernels/*.cc"
   "./src/utils/*.cc"
@@ -102,8 +102,8 @@ file(GLOB ORTTensorRTEp_SRC CONFIGURE_DEPENDS
   "./src/*.h"
   "./src/kernels/*.h"
 )
-add_library(ORTTensorRTEp SHARED ${ORTTensorRTEp_SRC})
-target_compile_definitions(ORTTensorRTEp PUBLIC
+add_library(onnxruntime_ep_tensorrt SHARED ${onnxruntime_ep_tensorrt_SRC})
+target_compile_definitions(onnxruntime_ep_tensorrt PUBLIC
   -DONNX_NAMESPACE=onnx
   -DONNX_ML
   -DNOMINMAX
@@ -169,7 +169,7 @@ if(WIN32) # Windows
   )
   set(ORT_LIBS "${ORT_LIBRARY_DIR}/onnxruntime.lib")
 
-  target_link_options(ORTTensorRTEp PRIVATE "-DEF:${CMAKE_SOURCE_DIR}/src/tensorrt_execution_provider.def")
+  target_link_options(onnxruntime_ep_tensorrt PRIVATE "-DEF:${CMAKE_SOURCE_DIR}/src/tensorrt_execution_provider.def")
 else()
   set(TRT_LIBS
     "${TENSORRT_HOME}/libnvinfer.so.${TRT_MAJOR_VERSION}"
@@ -182,15 +182,15 @@ endif()
 message(STATUS "ORT libs: ${ORT_LIBS}")
 message(STATUS "TRT libs: ${TRT_LIBS}")
 
-target_include_directories(ORTTensorRTEp PRIVATE
+target_include_directories(onnxruntime_ep_tensorrt PRIVATE
   "$<BUILD_INTERFACE:${ORT_INCLUDE_DIR}>"
   "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>"
   "$<BUILD_INTERFACE:${CUDAToolkit_INCLUDE_DIRS}>"
   "$<BUILD_INTERFACE:${TENSORRT_HOME}/include>"
-  "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/orttrtep>"
+  "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/onnxruntime_ep_tensorrt>"
 )
 
-target_link_libraries(ORTTensorRTEp PRIVATE
+target_link_libraries(onnxruntime_ep_tensorrt PRIVATE
   ${ORT_LIBS}
   ${TRT_LIBS}
   CUDA::cudart
@@ -201,20 +201,20 @@ target_link_libraries(ORTTensorRTEp PRIVATE
 )
 
 configure_file(
-  "${PROJECT_SOURCE_DIR}/cmake/ORTTensorRTEpConfigVersion.cmake.in"
-  "${CMAKE_CURRENT_BINARY_DIR}/ORTTensorRTEpConfigVersion.cmake"
+  "${PROJECT_SOURCE_DIR}/cmake/onnxruntime_ep_tensorrt_config_version.cmake.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/onnxruntime_ep_tensorrt_config_version.cmake"
   @ONLY
 )
 configure_file(
-  "${PROJECT_SOURCE_DIR}/cmake/ORTTensorRTEpConfig.cmake.in"
-  "${CMAKE_CURRENT_BINARY_DIR}/ORTTensorRTEpConfig.cmake"
+  "${PROJECT_SOURCE_DIR}/cmake/onnxruntime_ep_tensorrt_config.cmake.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/onnxruntime_ep_tensorrt_config.cmake"
   @ONLY
 )
 
 # ── Tests ──────────────────────────────────────────────────────────────────────
-option(ORTTensorRTEp_BUILD_TESTS "Build unit tests" OFF)
+option(onnxruntime_ep_tensorrt_BUILD_TESTS "Build unit tests" OFF)
 
-if(ORTTensorRTEp_BUILD_TESTS)
+if(onnxruntime_ep_tensorrt_BUILD_TESTS)
   enable_testing()
 
   FetchContent_Declare(
@@ -265,14 +265,14 @@ if(ORTTensorRTEp_BUILD_TESTS)
   )
 endif()
 
-if(ORTTensorRTEp_INSTALL)
+if(onnxruntime_ep_tensorrt_INSTALL)
   # Installation target
   include(GNUInstallDirs)
   include(CMakePackageConfigHelpers)
 
   if(WIN32 AND (CMAKE_CXX_COMPILER_ID MATCHES "MSVC"))
     install(
-      FILES "$<TARGET_PDB_FILE:ORTTensorRTEp>"
+      FILES "$<TARGET_PDB_FILE:onnxruntime_ep_tensorrt>"
       CONFIGURATIONS Debug RelWithDebInfo
       DESTINATION "${CMAKE_INSTALL_BINDIR}"
     )
@@ -280,20 +280,20 @@ if(ORTTensorRTEp_INSTALL)
 
   install(
     DIRECTORY src/
-    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/orttrtep"
+    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/onnxruntime_ep_tensorrt"
     FILES_MATCHING
     PATTERN "*.h"
   )
 
   install(
-    FILES "${CMAKE_CURRENT_BINARY_DIR}/ORTTensorRTEpConfig.cmake"
-          "${CMAKE_CURRENT_BINARY_DIR}/ORTTensorRTEpConfigVersion.cmake"
-    DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/orttrtep"
+    FILES "${CMAKE_CURRENT_BINARY_DIR}/onnxruntime_ep_tensorrt_config.cmake"
+          "${CMAKE_CURRENT_BINARY_DIR}/onnxruntime_ep_tensorrt_config_version.cmake"
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/onnxruntime_ep_tensorrt"
   )
 
-  install(TARGETS ORTTensorRTEp GSL flatbuffers EXPORT ORTTensorRTEpTargets)
-  install(EXPORT ORTTensorRTEpTargets
-    DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/orttrtep"
-    NAMESPACE ORTTensorRTEp::
+  install(TARGETS onnxruntime_ep_tensorrt GSL flatbuffers EXPORT onnxruntime_ep_tensorrt_targets)
+  install(EXPORT onnxruntime_ep_tensorrt_targets
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/onnxruntime_ep_tensorrt"
+    NAMESPACE onnxruntime_ep_tensorrt::
   )
 endif()

@@ -227,8 +227,9 @@ OrtStatus* EPContextNodeReader::GetEpContextFromGraph(const OrtGraph& graph) {
       if (val_status == nullptr && !source_value.empty() &&
           source_value != "TensorrtExecutionProvider") {
         return ort_api.CreateStatus(ORT_EP_FAIL,
-            ("[TensorRT EP] EPContext node has source '" + source_value +
-             "' which does not match this EP. Skipping.").c_str());
+                                    ("[TensorRT EP] EPContext node has source '" + source_value +
+                                     "' which does not match this EP. Skipping.")
+                                        .c_str());
       }
       if (val_status != nullptr) {
         ort_api.ReleaseStatus(val_status);

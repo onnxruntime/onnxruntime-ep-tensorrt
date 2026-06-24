@@ -104,7 +104,7 @@ jobs:
           -DCMAKE_CUDA_COMPILER=${{ runner.temp }}\v${{ matrix.cuda_version }}\bin\nvcc.exe ^
           -DCMAKE_CUDA_ARCHITECTURES=${{ env.CMAKE_CUDA_ARCHITECTURES }} ^
           -DTENSORRT_HOME=${{ runner.temp }}\TensorRT-${{ matrix.trt_version }}.Windows.win10.cuda-${{ matrix.cuda_version }} ^
-          -DORTTensorRTEp_BUILD_TESTS=ON ^
+          -Donnxruntime_ep_tensorrt_BUILD_TESTS=ON ^
           -S . -B out/build
         if %errorlevel% neq 0 exit /b %errorlevel%
 
@@ -270,7 +270,7 @@ jobs:
       AZCOPY_AUTO_LOGIN_TYPE: ${{ vars.AZCOPY_AUTO_LOGIN_TYPE }}
       AZCOPY_MSI_CLIENT_ID: ${{ vars.AZCOPY_MSI_CLIENT_ID }}
       ONNXRUNTIME_TEST_GPU_DEVICE_ID: '0'
-      TRTEP_LIBRARY_PATH: '${{ github.workspace }}\orttrtep\bin\ORTTensorRTEp.dll'
+      TRTEP_LIBRARY_PATH: '${{ github.workspace }}\orttrtep\bin\onnxruntime_ep_tensorrt.dll'
       ARTIFACT_NAME: orttrtep_cuda${{ matrix.cuda_version }}_trt${{ matrix.trt_version }}_${{ matrix.build_type }}.results
       BUILD_TYPE: ${{ matrix.build_type }}
       CUDA_VERSION: ${{ matrix.cuda_version }}

@@ -87,7 +87,7 @@ static std::string GetEpLibraryPath() {
     return std::string(env);
   }
   // Fallback: try to find it relative to the test binary
-  GTEST_LOG_(WARNING) << "TRT_EP_LIBRARY_PATH not set. Set it to the path of ORTTensorRTEp shared library.";
+  GTEST_LOG_(WARNING) << "TRT_EP_LIBRARY_PATH not set. Set it to the path of onnxruntime_ep_tensorrt shared library.";
   return "";
 }
 

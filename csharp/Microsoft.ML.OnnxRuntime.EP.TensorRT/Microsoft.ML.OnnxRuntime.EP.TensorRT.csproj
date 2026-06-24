@@ -41,11 +41,11 @@
 
   <!-- Copy EP DLL to output directory under runtimes/*/native/ -->
   <ItemGroup Condition="'$(Runtime)' == 'win-x64'">
-    <None Include="runtimes\win-x64\native\ORTTensorRTEp.dll" Pack="true" PackagePath="runtimes/win-x64/native/ORTTensorRTEp.dll" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="runtimes\win-x64\native\onnxruntime_ep_tensorrt.dll" Pack="true" PackagePath="runtimes/win-x64/native/onnxruntime_ep_tensorrt.dll" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(Runtime)' == 'win-arm64'">
-    <None Include="runtimes\win-arm64\native\ORTTensorRTEp.dll" Pack="true" PackagePath="runtimes/win-arm64/native/ORTTensorRTEp.dll" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="runtimes\win-arm64\native\onnxruntime_ep_tensorrt.dll" Pack="true" PackagePath="runtimes/win-arm64/native/onnxruntime_ep_tensorrt.dll" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

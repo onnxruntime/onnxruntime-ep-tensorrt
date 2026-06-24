@@ -9,8 +9,8 @@ module_dir = pathlib.Path(__file__).parent
 
 def get_library_path() -> str:
     candidate_paths = [
-        module_dir / "ORTTensorRTEp.dll",
-        module_dir / "ORTTensorRTEp.so",
+        module_dir / "onnxruntime_ep_tensorrt.dll",
+        module_dir / "onnxruntime_ep_tensorrt.so",
     ]
 
     paths = [p for p in candidate_paths if p.is_file()]

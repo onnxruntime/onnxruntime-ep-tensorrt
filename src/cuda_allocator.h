@@ -4,12 +4,13 @@
 #pragma once
 #include <atomic>
 #include "onnxruntime_c_api.h"
+#include "ep_allocator.h"
 
 using DeviceId = int16_t;
 
 namespace trt_ep {
 
-struct CUDAAllocator : OrtAllocator {
+struct CUDAAllocator : BaseAllocator {
   CUDAAllocator(const OrtMemoryInfo* mem_info, DeviceId device_id) : mem_info_(mem_info), device_id_(device_id) {
     OrtAllocator::version = ORT_API_VERSION;
     OrtAllocator::Alloc = [](OrtAllocator* this_, size_t size) { return static_cast<CUDAAllocator*>(this_)->Alloc(size); };
@@ -36,7 +37,7 @@ struct CUDAAllocator : OrtAllocator {
   const OrtMemoryInfo* mem_info_ = nullptr;
 };
 
-struct CUDAPinnedAllocator : OrtAllocator {
+struct CUDAPinnedAllocator : BaseAllocator {
   CUDAPinnedAllocator(const OrtMemoryInfo* mem_info) : mem_info_(mem_info) {
     OrtAllocator::version = ORT_API_VERSION;
     OrtAllocator::Alloc = [](OrtAllocator* this_, size_t size) { return static_cast<CUDAPinnedAllocator*>(this_)->Alloc(size); };

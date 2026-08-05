@@ -134,6 +134,20 @@ set(protobuf_BUILD_TESTS OFF CACHE INTERNAL "Disable tests")
 set(protobuf_MSVC_STATIC_RUNTIME OFF CACHE INTERNAL "Force build static runtime")
 FetchContent_MakeAvailable(protobuf)
 
+# Cross-compilation shim: protoc must run on the host arch at build time.
+# When cross-compiling (e.g. x64 host → ARM64 target), FetchContent builds
+# protoc for the target arch, which can't execute on the host. Pass
+# -DPROTOC_EXECUTABLE=<path-to-host-protoc> to inject a pre-built host-arch
+# binary as the protobuf::protoc imported target and set
+# -Dprotobuf_BUILD_PROTOC_BINARIES=OFF to skip building the target-arch one.
+if(DEFINED PROTOC_EXECUTABLE AND NOT TARGET protobuf::protoc)
+  add_executable(protobuf::protoc IMPORTED GLOBAL)
+  set_target_properties(protobuf::protoc PROPERTIES
+    IMPORTED_LOCATION "${PROTOC_EXECUTABLE}"
+  )
+  message(STATUS "Using pre-built protoc at ${PROTOC_EXECUTABLE}")
+endif()
+
 # Add ONNX
 FetchContent_Declare(
   onnx
@@ -227,17 +241,22 @@ if(onnxruntime_ep_tensorrt_BUILD_TESTS)
   FetchContent_MakeAvailable(googletest)
 
   add_executable(trt_ep_tests
+    tests/test_main.cc
     tests/cuda_graph_test.cc
     tests/tensorrt_basic_test.cc
+    tests/tensorrt_ep_dla_options_test.cc
   )
   target_compile_definitions(trt_ep_tests PRIVATE
     -DONNX_NAMESPACE=onnx
     -DONNX_ML
     -DNOMINMAX
+    -DORT_API_MANUAL_INIT
+    -DEP_LIB_PATH="$<TARGET_FILE:onnxruntime_ep_tensorrt>"
   )
   target_include_directories(trt_ep_tests PRIVATE
     "$<BUILD_INTERFACE:${ORT_INCLUDE_DIR}>"
     "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>"
+    "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/tests>"
     "$<BUILD_INTERFACE:${CUDAToolkit_INCLUDE_DIRS}>"
   )
   target_link_libraries(trt_ep_tests PRIVATE
@@ -245,7 +264,15 @@ if(onnxruntime_ep_tensorrt_BUILD_TESTS)
     CUDA::cudart
     onnx
     protobuf::libprotobuf
-    GTest::gtest_main
+    GTest::gtest
+  )
+
+  # Copy the EP DLL next to the test binary so resolve_ep_lib() finds it first.
+  add_custom_command(TARGET trt_ep_tests POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "$<TARGET_FILE:onnxruntime_ep_tensorrt>"
+      "$<TARGET_FILE_DIR:trt_ep_tests>/"
+    COMMENT "Copying EP library next to test binary"
   )
 
   # Copy testdata to the build directory so tests can find it
@@ -263,6 +290,38 @@ if(onnxruntime_ep_tensorrt_BUILD_TESTS)
     PROPERTIES ENVIRONMENT "TESTDATA_DIR=$<TARGET_FILE_DIR:trt_ep_tests>/testdata"
     DISCOVERY_MODE PRE_TEST
   )
+endif()
+
+# DLA graph transform support is Windows-only for now: the transforms library is
+# distributed as a static .lib (per MSFT request) and has not been validated on Linux.
+option(onnxruntime_ep_tensorrt_DLA_TRANSFORMS "Enable DLA graph transforms (Windows only)" OFF)
+
+if(onnxruntime_ep_tensorrt_DLA_TRANSFORMS)
+  if(NOT WIN32)
+    message(FATAL_ERROR
+      "onnxruntime_ep_tensorrt_DLA_TRANSFORMS=ON is only supported on Windows. "
+      "The DLA transforms library ships as a static .lib (per MSFT request) "
+      "and has not been validated on Linux.")
+  endif()
+  if(NOT DEFINED DLA_TRANSFORMS_ROOT)
+    message(FATAL_ERROR "DLA_TRANSFORMS_ROOT must be set when onnxruntime_ep_tensorrt_DLA_TRANSFORMS is ON")
+  endif()
+  target_compile_definitions(onnxruntime_ep_tensorrt PRIVATE USE_DLA_TRANSFORMS)
+  target_include_directories(onnxruntime_ep_tensorrt PRIVATE "${DLA_TRANSFORMS_ROOT}/include")
+  target_link_libraries(onnxruntime_ep_tensorrt PRIVATE "${DLA_TRANSFORMS_ROOT}/lib/dla_transforms.lib")
+
+  if(onnxruntime_ep_tensorrt_BUILD_TESTS)
+    target_sources(trt_ep_tests PRIVATE tests/tensorrt_ep_dla_transforms_test.cc)
+    target_compile_definitions(trt_ep_tests PRIVATE USE_DLA_TRANSFORMS)
+    target_include_directories(trt_ep_tests PRIVATE "${DLA_TRANSFORMS_ROOT}/include")
+    # Copy dla_transforms.dll next to the test binary so resolve_dla_transforms_dll() finds it.
+    add_custom_command(TARGET trt_ep_tests POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${DLA_TRANSFORMS_ROOT}/bin/dla_transforms.dll"
+        "$<TARGET_FILE_DIR:trt_ep_tests>/"
+      COMMENT "Copying dla_transforms.dll next to test binary"
+    )
+  endif()
 endif()
 
 if(onnxruntime_ep_tensorrt_INSTALL)

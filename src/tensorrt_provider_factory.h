@@ -4,6 +4,7 @@
 #include "tensorrt_execution_provider_data_transfer.h"
 #include "tensorrt_execution_provider_custom_ops.h"
 #include "cuda_allocator.h"
+#include "ep_arena.h"
 
 #include <mutex>
 #include <functional>
@@ -32,7 +33,7 @@ struct TensorrtExecutionProviderFactory : public OrtEpFactory, public ApiPtrs {
   const OrtMemoryInfo* GetMemoryInfoByOrdinal(int cuda_ordinal, bool is_pinned);
 
   // Keeps allocators per ep device in factory so they can be shared across sessions.
-  std::unordered_map<uint32_t, std::unique_ptr<CUDAAllocator>> cuda_gpu_allocators;  // device id -> allocator
+  std::unordered_map<uint32_t, std::unique_ptr<ArenaAllocator>> cuda_gpu_allocators;  // device id -> arena-backed allocator
   std::unordered_map<uint32_t, std::unique_ptr<CUDAPinnedAllocator>> cuda_pinned_allocators;
 
  private:

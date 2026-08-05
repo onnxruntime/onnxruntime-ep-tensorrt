@@ -370,35 +370,30 @@ void ORT_API_CALL TensorrtExecutionProviderFactory::ReleaseEpImpl(OrtEpFactory* 
 
 OrtStatus* ORT_API_CALL TensorrtExecutionProviderFactory::CreateAllocatorImpl(OrtEpFactory* this_ptr,
                                                                               const OrtMemoryInfo* memory_info,
-                                                                              const OrtKeyValuePairs* /*allocator_options*/,
+                                                                              const OrtKeyValuePairs* allocator_options,
                                                                               OrtAllocator** allocator) noexcept {
   auto& factory = *static_cast<TensorrtExecutionProviderFactory*>(this_ptr);
   API_IMPL_BEGIN
-
-  // NOTE: The factory implementation is free to return a shared OrtAllocator* instance instead of creating a new
-  //       allocator on each call. To do this have an allocator instance as an OrtEpFactory class member and make
-  //       ReleaseAllocatorImpl a no-op.
-
-  // NOTE: EP should implement its own arena logic. ep_arena.cc/h is provided as a reference and we use it here for
-  //       device memory. `allocator_options` can be used for arena configuration and there is a helper in ep_arena.h
-  //       to convert from OrtKeyValuePairs to the same arena config settings that ORT uses.
-  //       You are of course free to have completely different settings.
 
   const OrtMemoryDevice* mem_device = factory.ep_api.MemoryInfo_GetMemoryDevice(memory_info);
   uint32_t device_id = factory.ep_api.MemoryDevice_GetDeviceId(mem_device);
 
   if (factory.ep_api.MemoryDevice_GetMemoryType(mem_device) == OrtDeviceMemoryType_DEFAULT) {
-    // use the one that previously created
+    // Return cached arena allocator if already created for this device.
     if (factory.cuda_gpu_allocators.find(device_id) != factory.cuda_gpu_allocators.end()) {
       *allocator = factory.cuda_gpu_allocators[device_id].get();
       return nullptr;
     }
 
-    // create a CUDA allocator
-    auto cuda_allocator = std::make_unique<CUDAAllocator>(memory_info, static_cast<DeviceId>(device_id));
-
-    *allocator = cuda_allocator.get();
-    factory.cuda_gpu_allocators[device_id] = std::move(cuda_allocator);
+    // Wrap a raw CUDA allocator in a BFCArena so that freed blocks are pooled
+    // and reused across inference runs instead of being returned to the OS via cudaFree.
+    // Arena config can be tuned via allocator_options (see ArenaConfig::ConfigKeyNames).
+    auto raw = std::make_unique<CUDAAllocator>(memory_info, static_cast<DeviceId>(device_id));
+    std::unique_ptr<ArenaAllocator> arena;
+    RETURN_IF_ERROR(ArenaAllocator::CreateOrtArenaAllocator(std::move(raw), allocator_options,
+                                                            factory.ort_api, nullptr, arena));
+    *allocator = arena.get();
+    factory.cuda_gpu_allocators[device_id] = std::move(arena);
 
   } else if (factory.ep_api.MemoryDevice_GetMemoryType(mem_device) == OrtDeviceMemoryType_HOST_ACCESSIBLE) {
     // use the one that previously created
@@ -425,8 +420,7 @@ OrtStatus* ORT_API_CALL TensorrtExecutionProviderFactory::CreateAllocatorImpl(Or
 
 void ORT_API_CALL TensorrtExecutionProviderFactory::ReleaseAllocatorImpl(OrtEpFactory* /*this*/,
                                                                          OrtAllocator* allocator) noexcept {
-  // no-op. The allocators will be shared across sessions.
-  // delete static_cast<CUDAAllocator*>(allocator);
+  // no-op. Arena allocators are owned by the factory and shared across sessions.
 }
 
 OrtStatus* ORT_API_CALL TensorrtExecutionProviderFactory::CreateDataTransferImpl(

@@ -24,9 +24,11 @@ struct TensorrtExecutionProviderInfo {
   bool dla_enable{false};
   int dla_core{0};
   size_t dla_mem_pool_limit{4ULL << 30};  // DLA global / local DRAM pool limit in bytes. Default 4 GiB.
+  bool dla_static_io_buffers{false};
   bool dla_gpu_fallback_enable{false};
   bool dla_enable_uint8_asymmetric_quantization{false};
   bool dla_adjust_for_dla{false};
+  bool dla_transform_enable{false};
   bool dump_subgraphs{false};
   bool engine_cache_enable{false};
   std::string engine_cache_path{""};

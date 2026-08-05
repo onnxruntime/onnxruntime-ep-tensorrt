@@ -6,6 +6,10 @@
 #include "nv_includes.h"
 #include "cuda_graph.h"
 
+#ifdef USE_DLA_TRANSFORMS
+#include "dla_transforms.h"
+#endif
+
 #include <ctime>
 #include <string>
 #include <unordered_set>
@@ -56,9 +60,9 @@ class TensorrtLogger : public nvinfer1::ILogger {
                "%Y-%m-%d %H:%M:%S",
                &stm);
       const char* sevstr = (severity == Severity::kINTERNAL_ERROR ? "    BUG" : severity == Severity::kERROR ? "  ERROR"
-                                                                            : severity == Severity::kWARNING ? "WARNING"
-                                                                            : severity == Severity::kINFO    ? "   INFO"
-                                                                                                             : "UNKNOWN");
+                                                                              : severity == Severity::kWARNING ? "WARNING"
+                                                                              : severity == Severity::kINFO    ? "   INFO"
+                                                                                                               : "UNKNOWN");
       OrtLoggingLevel ort_severity;
       if (severity <= Severity::kERROR) {
         ort_severity = ORT_LOGGING_LEVEL_ERROR;
@@ -141,7 +145,9 @@ struct TensorrtComputeState {
   bool dla_enable = false;
   int dla_core = 0;
   size_t dla_mem_pool_limit = 4ULL << 30;
+  bool dla_static_io_buffers = false;
   bool dla_gpu_fallback_enable = false;
+  bool dla_transform_enable = false;
   std::string trt_node_name_with_precision;
   bool engine_cache_enable = false;
   std::string engine_cache_path;
@@ -193,6 +199,7 @@ struct TensorrtComputeStateForEPContext {
   std::mutex* tensorrt_mu_ptr = nullptr;
   bool sync_stream_after_enqueue = true;
   bool dla_enable = false;
+  bool dla_static_io_buffers = false;
 };
 
 using ShapeRangesMap = std::unordered_map<std::string, std::unordered_map<size_t, std::vector<std::vector<int64_t>>>>;
@@ -346,9 +353,11 @@ struct TensorrtExecutionProvider : public OrtEp, public ApiPtrs {
   bool dla_enable_ = false;
   int dla_core_ = 0;
   size_t dla_mem_pool_limit_ = 4ULL << 30;
+  bool dla_static_io_buffers_ = false;
   bool dla_gpu_fallback_enable_ = false;
   bool dla_enable_uint8_asymmetric_quantization_ = false;
   bool dla_adjust_for_dla_ = false;
+  bool dla_transform_enable_ = false;
   bool force_sequential_engine_build_ = false;
   std::string int8_calibration_cache_name_;
   bool int8_calibration_cache_available_ = false;
@@ -439,6 +448,8 @@ struct TensorrtExecutionProvider : public OrtEp, public ApiPtrs {
 
   /**Check whether all the nodes of subgraph are supported*/
   bool IsSubGraphFullySupported(const OrtGraph* graph, SubGraphCollection_t supported_nodes_vector) const;
+
+  OrtStatus* ApplyDlaTransforms(std::string& model_bytes) const;
 };
 
 /// <summary>

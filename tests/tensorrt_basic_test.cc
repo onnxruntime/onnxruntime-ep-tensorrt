@@ -18,9 +18,8 @@
 #include <thread>
 #include <vector>
 
-#define ORT_API_MANUAL_INIT
 #include "onnxruntime_cxx_api.h"
-#undef ORT_API_MANUAL_INIT
+#include "test_config.h"
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -44,16 +43,6 @@ static std::filesystem::path GetTestDataDir() {
     return src_path;
   }
   return std::filesystem::path("testdata");
-}
-
-// Get the path to the TRT plugin EP library from environment variable.
-static std::string GetEpLibraryPath() {
-  const char* env = std::getenv("TRT_EP_LIBRARY_PATH");
-  if (env && std::strlen(env) > 0) {
-    return std::string(env);
-  }
-  GTEST_LOG_(WARNING) << "TRT_EP_LIBRARY_PATH not set. Set it to the path of onnxruntime_ep_tensorrt shared library.";
-  return "";
 }
 
 // Build a model with Add ops: M = (X + Y) + Z
@@ -201,29 +190,15 @@ static std::filesystem::path WriteModelToFile(const std::string& model_data,
 class TensorrtBasicTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    ep_library_path_ = GetEpLibraryPath();
-    if (ep_library_path_.empty()) {
-      GTEST_SKIP() << "TRT_EP_LIBRARY_PATH not set, skipping TensorRT basic tests.";
+    if (trt_test::g_ep_lib_path.empty()) {
+      GTEST_SKIP() << "EP library not found, skipping TensorRT basic tests.";
     }
-
-    Ort::InitApi();
-    env_ = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "TensorrtBasicTest");
-
-    ep_registration_name_ = "TRTPluginEP";
-#ifdef _WIN32
-    std::wstring wide_path(ep_library_path_.begin(), ep_library_path_.end());
-    env_->RegisterExecutionProviderLibrary(ep_registration_name_.c_str(), wide_path);
-#else
-    env_->RegisterExecutionProviderLibrary(ep_registration_name_.c_str(), ep_library_path_);
-#endif
+    if (trt_test::g_target == "dla") {
+      GTEST_SKIP() << "--target=dla: skipping GPU tests.";
+    }
   }
 
   void TearDown() override {
-    if (!ep_library_path_.empty() && env_) {
-      env_->UnregisterExecutionProviderLibrary(ep_registration_name_.c_str());
-    }
-    env_.reset();
-    // Clean up temp model files
     for (const auto& path : temp_files_) {
       if (std::filesystem::exists(path)) {
         std::filesystem::remove(path);
@@ -236,23 +211,23 @@ class TensorrtBasicTest : public ::testing::Test {
                              const std::unordered_map<std::string, std::string>& ep_options = {}) {
     Ort::SessionOptions session_options;
 
-    auto all_ep_devices = env_->GetEpDevices();
+    auto all_ep_devices = trt_test::g_ort_env->GetEpDevices();
     std::vector<Ort::ConstEpDevice> selected_devices;
     for (const auto& ep_device : all_ep_devices) {
-      if (std::string(ep_device.EpName()) == ep_registration_name_) {
+      if (std::string(ep_device.EpName()) == trt_test::kEpName) {
         selected_devices.push_back(ep_device);
         break;
       }
     }
     EXPECT_FALSE(selected_devices.empty()) << "No TRT EP device found";
 
-    session_options.AppendExecutionProvider_V2(*env_, selected_devices, ep_options);
+    session_options.AppendExecutionProvider_V2(*trt_test::g_ort_env, selected_devices, ep_options);
 
 #ifdef _WIN32
     std::wstring wide_model_path = model_path.wstring();
-    return Ort::Session(*env_, wide_model_path.c_str(), session_options);
+    return Ort::Session(*trt_test::g_ort_env, wide_model_path.c_str(), session_options);
 #else
-    return Ort::Session(*env_, model_path.c_str(), session_options);
+    return Ort::Session(*trt_test::g_ort_env, model_path.c_str(), session_options);
 #endif
   }
 
@@ -263,9 +238,6 @@ class TensorrtBasicTest : public ::testing::Test {
     return path;
   }
 
-  std::unique_ptr<Ort::Env> env_;
-  std::string ep_library_path_;
-  std::string ep_registration_name_;
   std::vector<std::filesystem::path> temp_files_;
 };
 

@@ -17,6 +17,8 @@
 #include "onnx/onnx_pb.h"
 #include "cuda/unary_elementwise_ops_impl.h"
 #include "utils/ep_utils.h"
+#include "utils/path_string.h"
+#include "windows_dependency_loader.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -533,6 +535,16 @@ OrtStatusPtr ApplyProfileShapesFromInputTensorValue(std::vector<nvinfer1::IOptim
     break;                                                                                                                                        \
   }
 
+// Clear an existing cuDLA registration before replacing its tensor address.
+static bool SetTensorAddressDla(nvinfer1::IExecutionContext* ctx, const char* name, void* data) {
+  const void* prev = ctx->getTensorAddress(name);
+  if (prev != data) {
+    if (prev != nullptr && !ctx->setTensorAddress(name, nullptr)) return false;
+    return ctx->setTensorAddress(name, data);
+  }
+  return true;
+}
+
 OrtStatusPtr BindContextInput(Ort::KernelContext& ctx,
                               nvinfer1::ICudaEngine* trt_engine,
                               nvinfer1::IExecutionContext* trt_context,
@@ -542,7 +554,7 @@ OrtStatusPtr BindContextInput(Ort::KernelContext& ctx,
                               std::unordered_map<std::string, std::vector<int64_t>>& shape_tensor_values_int64,
                               std::vector<AllocatorUniquePtr<void>>& scratch_buffers,
                               OrtAllocator* alloc,
-                              cudaStream_t stream) {
+                              cudaStream_t stream, bool dla_enable) {
   try {
     auto input_tensor = ctx.GetInput(input_index);
     auto tensor_info = input_tensor.GetTensorTypeAndShapeInfo();
@@ -648,7 +660,9 @@ OrtStatusPtr BindContextInput(Ort::KernelContext& ctx,
           return g_ort_api->CreateStatus(ORT_EP_FAIL, std::string("TensorRT EP input onnx tensor data type: " + std::to_string(tensor_type) + " not supported.").c_str());
         }
       }
-      trt_context->setTensorAddress(input_name, data);
+      const bool bound = dla_enable ? SetTensorAddressDla(trt_context, input_name, data)
+                                    : trt_context->setTensorAddress(input_name, data);
+      if (!bound) return Ort::GetApi().CreateStatus(ORT_EP_FAIL, "Failed to bind TensorRT input tensor address");
     }
   } catch (const Ort::Exception& e) {
     return g_ort_api->CreateStatus(ORT_EP_FAIL, e.what());
@@ -667,7 +681,7 @@ OrtStatusPtr BindContextOutput(Ort::KernelContext& ctx,
                                DDSOutputAllocatorMap& dds_output_allocator_map,
                                std::vector<AllocatorUniquePtr<void>>& scratch_buffers,
                                OrtAllocator* alloc,
-                               std::unordered_map<char const*, void*>& buffers) {
+                               std::unordered_map<char const*, void*>& buffers, bool dla_enable) {
   // Get output shape
   nvinfer1::Dims dims = trt_context->getTensorShape(output_name);
   int nb_dims = dims.nbDims;
@@ -721,7 +735,9 @@ OrtStatusPtr BindContextOutput(Ort::KernelContext& ctx,
           return g_ort_api->CreateStatus(ORT_EP_FAIL, std::string("TensorRT EP output tensor data type: " + std::to_string(output_type) + " not supported.").c_str());
         }
       }
-      trt_context->setTensorAddress(output_name, buffers[output_name]);
+      const bool bound = dla_enable ? SetTensorAddressDla(trt_context, output_name, buffers[output_name])
+                                    : trt_context->setTensorAddress(output_name, buffers[output_name]);
+      if (!bound) return Ort::GetApi().CreateStatus(ORT_EP_FAIL, "Failed to bind TensorRT output tensor address");
     } catch (const Ort::Exception& e) {
       return g_ort_api->CreateStatus(ORT_EP_FAIL, e.what());
     }
@@ -946,7 +962,7 @@ SubGraphCollection_t TensorrtExecutionProvider::GetSupportedList(SubGraphCollect
         TensorrtLogger& trt_logger = GetTensorrtLogger(detailed_build_log_, logger_, &ort_api);
         auto trt_builder = GetBuilder(trt_logger);
         auto network_flags = 0;
-#if NV_TENSORRT_VERSION >= 11
+#if defined(ORT_TENSORRT_STRONGLY_TYPED) || NV_TENSORRT_MAJOR >= 11
         network_flags |= 0;
 #elif NV_TENSORRT_MAJOR > 8
         network_flags |= (fp16_enable_ || int8_enable_ || bf16_enable_) ? 0 : 1U << static_cast<uint32_t>(nvinfer1::NetworkDefinitionCreationFlag::kSTRONGLY_TYPED);
@@ -1016,12 +1032,48 @@ SubGraphCollection_t TensorrtExecutionProvider::GetSupportedList(SubGraphCollect
   return nodes_list_output;
 }
 
+#if ORT_API_VERSION >= 27
+OrtStatus* ORT_API_CALL TensorrtExecutionProvider::GetDefaultMemoryDeviceImpl(
+    const OrtEp* this_ptr, const OrtMemoryDevice** device) noexcept {
+  const auto& ep = *static_cast<const TensorrtExecutionProvider*>(this_ptr);
+  *device = nullptr;
+  if (ep.dla_enable_) {
+    // ORT must allocate DLA tensors from cudaMallocHost, not pageable CPU memory.
+    const auto* info = ep.factory_.GetMemoryInfoByOrdinal(ep.device_id_, false, true);
+    if (!info) return ep.ort_api.CreateStatus(ORT_EP_FAIL, "DLA memory device is not registered");
+    *device = ep.ep_api.MemoryInfo_GetMemoryDevice(info);
+  }
+  return nullptr;
+}
+#endif
+
 OrtStatus* ORT_API_CALL TensorrtExecutionProvider::GetCapabilityImpl(OrtEp* this_ptr, const OrtGraph* graph,
-                                                                     OrtEpGraphSupportInfo* graph_support_info) noexcept {
+                                                                     OrtEpGraphSupportInfo* graph_support_info) noexcept try {
   TensorrtExecutionProvider* ep = static_cast<TensorrtExecutionProvider*>(this_ptr);
   const OrtApi& ort_api = ep->ort_api;
 
   auto ort_graph = Ort::ConstGraph(graph);
+
+  const ORTCHAR_T* graph_model_path = nullptr;
+  RETURN_IF_ERROR(ort_api.Graph_GetModelPath(graph, &graph_model_path));
+  const auto model_path = PathToUTF8String(PathString(graph_model_path));
+  RETURN_IF_NOT(model_path.size() < sizeof(ep->model_path_), "ONNX model path is too long.");
+  std::memcpy(ep->model_path_, model_path.c_str(), model_path.size() + 1);
+  if (ep->dump_ep_context_model_ && ep->ep_context_file_path_.empty() && !model_path.empty()) {
+    auto context_path = std::filesystem::path(graph_model_path);
+    context_path.replace_filename(context_path.stem().native() + ORT_TSTR("_ctx.onnx"));
+    ep->ep_context_file_path_ = PathToUTF8String(context_path.native());
+    if (ep->engine_cache_enable_) {
+      const auto cache_directory = context_path.parent_path() /
+                                   std::filesystem::u8path(ep->engine_cache_relative_path_to_context_model_dir_);
+      ep->cache_path_ = cache_directory.u8string();
+      if (!ep->cache_path_.empty()) {
+        std::error_code error;
+        std::filesystem::create_directories(cache_directory, error);
+        RETURN_IF_NOT(!error, "Cannot create EPContext engine cache directory: ", error.message());
+      }
+    }
+  }
 
   // Sort the nodes in priority-based topological order
   std::vector<Ort::ConstNode> topo_sorted_nodes;
@@ -1072,6 +1124,21 @@ OrtStatus* ORT_API_CALL TensorrtExecutionProvider::GetCapabilityImpl(OrtEp* this
     const char* op_type = nullptr;
     RETURN_IF_ERROR(ep->ort_api.Node_GetOperatorType(node, &op_type));
 
+    // EPContext is not an ONNX parser operator. Fuse each owned context directly
+    // so CompileImpl deserializes it, and keep all context nodes out of parser groups.
+    if (std::strcmp(op_type, "EPContext") == 0) {
+      bool is_context_node = false;
+      RETURN_IF_ERROR(EPContextNodeReader::IsTensorRTContextNode(node, ort_api, is_context_node));
+      if (is_context_node) {
+        OrtNodeFusionOptions node_fusion_options = {};
+        node_fusion_options.ort_version_supported = ORT_API_VERSION;
+        node_fusion_options.drop_constant_initializers = true;
+        RETURN_IF_ERROR(ep->ep_api.EpGraphSupportInfo_AddNodesToFuse(graph_support_info, &node, 1, &node_fusion_options));
+      }
+      new_subgraph = true;
+      continue;
+    }
+
     if (control_flow_op_set.find(op_type) != control_flow_op_set.end()) {
       auto supported_control_flow_op = [&](const OrtNode* node) {
         OrtStatus* status = nullptr;
@@ -1121,6 +1188,8 @@ OrtStatus* ORT_API_CALL TensorrtExecutionProvider::GetCapabilityImpl(OrtEp* this
       new_subgraph = true;
     }
   }
+
+  if (parser_nodes_vector.empty()) return nullptr;
 
   // Use this local definitions for now
   // TODO: Use provider option
@@ -1262,6 +1331,15 @@ OrtStatus* ORT_API_CALL TensorrtExecutionProvider::GetCapabilityImpl(OrtEp* this
   }
 
   return nullptr;
+} catch (const Ort::Exception& error) {
+  const auto& api = static_cast<TensorrtExecutionProvider*>(this_ptr)->ort_api;
+  return api.CreateStatus(error.GetOrtErrorCode(), error.what());
+} catch (const std::exception& error) {
+  const auto& api = static_cast<TensorrtExecutionProvider*>(this_ptr)->ort_api;
+  return api.CreateStatus(ORT_EP_FAIL, error.what());
+} catch (...) {
+  const auto& api = static_cast<TensorrtExecutionProvider*>(this_ptr)->ort_api;
+  return api.CreateStatus(ORT_EP_FAIL, "Unexpected exception in TensorRT GetCapabilityImpl.");
 }
 
 OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this_ptr,
@@ -1336,7 +1414,7 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
   TensorrtLogger& trt_logger = GetTensorrtLogger(detailed_build_log_, logger_, &ort_api);
   auto trt_builder = GetBuilder(trt_logger);
   auto network_flags = 0;
-#if NV_TENSORRT_VERSION >= 11
+#if defined(ORT_TENSORRT_STRONGLY_TYPED) || NV_TENSORRT_MAJOR >= 11
   network_flags |= 0;
 #elif NV_TENSORRT_MAJOR > 8
   network_flags |= (fp16_enable_ || int8_enable_ || bf16_enable_) ? 0 : 1U << static_cast<uint32_t>(nvinfer1::NetworkDefinitionCreationFlag::kSTRONGLY_TYPED);
@@ -1365,7 +1443,7 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
   // Force Pow + Reduce ops in layer norm to run in FP32 to avoid overflow.
   // setPrecision/setOutputType are removed in TRT 11 (strongly-typed networks); fp16/bf16 are
   // forced false there, so this block only applies pre-11.
-#if NV_TENSORRT_MAJOR < 11
+#if !defined(ORT_TENSORRT_STRONGLY_TYPED) && NV_TENSORRT_MAJOR < 11
 #if defined(_MSC_VER)
 #pragma warning(push)
 #pragma warning(disable : 4996)
@@ -1541,7 +1619,7 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
   // platformHasFastFp16 was removed in TRT 11; no #else needed because TRT 11's
   // minimum GPU requirement (Volta, SM 7.0) exceeds the FP16 threshold (SM 5.3),
   // so the check would always return true on any TRT 11-capable device.
-#if NV_TENSORRT_MAJOR < 11
+#if !defined(ORT_TENSORRT_STRONGLY_TYPED) && NV_TENSORRT_MAJOR < 11
   if (fp16_enable_ || bf16_enable_) {
 #if defined(_MSC_VER)
 #pragma warning(push)
@@ -1564,7 +1642,7 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
   // platformHasFastInt8 was removed in TRT 11; no #else needed because TRT 11's
   // minimum GPU requirement (Volta, SM 7.0) exceeds the INT8 threshold (SM 6.1),
   // so the check would always return true on any TRT 11-capable device.
-#if NV_TENSORRT_MAJOR < 11
+#if !defined(ORT_TENSORRT_STRONGLY_TYPED) && NV_TENSORRT_MAJOR < 11
   if (int8_enable_) {
 #if defined(_MSC_VER)
 #pragma warning(push)
@@ -1585,12 +1663,14 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
 
   // Load INT8 calibration table
   std::unordered_map<std::string, float> dynamic_range_map;
+#if !defined(ORT_TENSORRT_STRONGLY_TYPED)
   if (int8_enable_ && int8_calibration_cache_available_) {
     const std::string calibration_cache_path = GetCachePath(cache_path_, int8_calibration_cache_name_);
     if (!ReadDynamicRange(calibration_cache_path, int8_use_native_tensorrt_calibration_table_, dynamic_range_map)) {
       throw std::runtime_error("Failed to read INT8 calibration table " + calibration_cache_path);
     }
   }
+#endif
 
   const char* name = nullptr;
   RETURN_IF_ERROR(ort_api.Node_GetName(fused_node, &name));
@@ -1600,7 +1680,7 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
   std::string trt_node_name_with_precision = fused_node_name;
   // TRT 11 removed the standalone precision builder flags; networks are strongly-typed and the
   // fp16/bf16/int8 enables are forced false at construction, so this block only applies pre-11.
-#if NV_TENSORRT_MAJOR < 11
+#if !defined(ORT_TENSORRT_STRONGLY_TYPED) && NV_TENSORRT_MAJOR < 11
 #if defined(_MSC_VER)
 #pragma warning(push)
 #pragma warning(disable : 4996)
@@ -1645,22 +1725,9 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
 #endif
     if (dla_enable_ && dla_core_ >= 0) {  // DLA can only run with FP16 and INT8
       int number_of_dla_core = trt_builder->getNbDLACores();
-      if (number_of_dla_core == 0) {
-        std::string message = "[TensorRT EP] Try to use DLA core, but platform doesn't have any DLA core";
-        Ort::ThrowOnError(ep->ort_api.Logger_LogMessage(&ep->logger_,
-                                                        OrtLoggingLevel::ORT_LOGGING_LEVEL_WARNING,
-                                                        message.c_str(), ORT_FILE, __LINE__, __FUNCTION__));
-        dla_enable_ = false;
+      if (number_of_dla_core <= 0 || dla_core_ >= number_of_dla_core) {
+        return ort_api.CreateStatus(ORT_INVALID_ARGUMENT, "Requested DLA core is not available");
       } else {
-        if (dla_core_ >= number_of_dla_core) {
-          std::string message = "[TensorRT EP] Try to use DLA core #" + std::to_string(dla_core_) +
-                                std::string(", but it exceeds platform's maximum DLA core number ") + std::to_string(number_of_dla_core) +
-                                std::string(". Use DLA core 0 instead.");
-          Ort::ThrowOnError(ep->ort_api.Logger_LogMessage(&ep->logger_,
-                                                          OrtLoggingLevel::ORT_LOGGING_LEVEL_WARNING,
-                                                          message.c_str(), ORT_FILE, __LINE__, __FUNCTION__));
-          dla_core_ = 0;
-        }
         std::string message = "[TensorRT EP] use DLA core " + std::to_string(dla_core_);
         Ort::ThrowOnError(ep->ort_api.Logger_LogMessage(&ep->logger_,
                                                         OrtLoggingLevel::ORT_LOGGING_LEVEL_VERBOSE,
@@ -1670,9 +1737,9 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
         }
         trt_config->setDefaultDeviceType(nvinfer1::DeviceType::kDLA);
         trt_config->setDLACore(dla_core_);
-#if NV_TENSORRT_MAJOR >= 11
-        // DLA + explicit-QDQ requires FP16 mode on the builder config; kFP16 is deprecated in
-        // TRT 11 but still functional and required here (setDLABackend asserts otherwise).
+#if NV_TENSORRT_MAJOR >= 11 && !defined(ORT_TENSORRT_STRONGLY_TYPED)
+        // Retain the DLA FP16 workaround for older TensorRT 11 builds only.
+        // TensorRT 11.4+ takes precision from the graph and removes this flag.
 #if defined(_MSC_VER)
 #pragma warning(push)
 #pragma warning(disable : 4996)
@@ -1830,7 +1897,7 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
 
   // If weight-stripped engine is enabled and refitted engine cache is not present,
   // TRT EP will use the engine cache with ".stripped.engine" appended to the end.
-  const std::filesystem::path engine_cache_fs_path = engine_cache_path;
+  const auto engine_cache_fs_path = std::filesystem::u8path(engine_cache_path);
   if (weight_stripped_engine_enable_ && !std::filesystem::exists(engine_cache_fs_path)) {
     engine_cache_path = cache_path_prefix + ".stripped.engine";
     weight_stripped_engine_refit_ = true;
@@ -1868,7 +1935,7 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
         }
       }
 
-      std::ifstream engine_file(engine_cache_path, std::ios::binary | std::ios::in);
+      std::ifstream engine_file(std::filesystem::u8path(engine_cache_path), std::ios::binary | std::ios::in);
       if (engine_cache_enable_ && !engine_decryption_enable_ && engine_file && !engine_update) {
         engine_file.seekg(0, std::ios::end);
         size_t engine_size = engine_file.tellg();
@@ -1887,7 +1954,7 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
         }
 
       } else if (engine_decryption_enable_ && engine_cache_enable_ &&
-                 std::filesystem::exists(encrypted_engine_cache_path) && !engine_update) {
+                 std::filesystem::exists(std::filesystem::u8path(encrypted_engine_cache_path)) && !engine_update) {
         // Decrypt engine
         size_t engine_size = 0;
         if (!engine_decryption_(encrypted_engine_cache_path.c_str(), nullptr, &engine_size)) {
@@ -1914,7 +1981,7 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
         // platformHasFastInt8 and setInt8Calibrator (implicit quantization) were removed in TRT 11.
         // No #else needed: TRT 11's minimum GPU (Volta, SM 7.0) always has fast INT8 (SM 6.1+),
         // and explicit quantization via SetDynamicRange is used instead of setInt8Calibrator.
-#if NV_TENSORRT_MAJOR < 11
+#if !defined(ORT_TENSORRT_STRONGLY_TYPED) && NV_TENSORRT_MAJOR < 11
 #if defined(_MSC_VER)
 #pragma warning(push)
 #pragma warning(disable : 4996)
@@ -2008,7 +2075,7 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
                                                               message.c_str(), ORT_FILE, __LINE__, __FUNCTION__));
             }
           } else {
-            std::ofstream file(engine_cache_path, std::ios::binary | std::ios::out);
+            std::ofstream file(std::filesystem::u8path(engine_cache_path), std::ios::binary | std::ios::out);
             file.write(reinterpret_cast<char*>(serialized_engine->data()), serialized_engine->size());
             std::string message = "[TensorRT EP] Serialized engine " + engine_cache_path;
             Ort::ThrowOnError(ep->ort_api.Logger_LogMessage(&ep->logger_,
@@ -2112,20 +2179,11 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
     }
   }
 
-  // Save TRT engine, other TRT objects and input/output info to map
-  parsers_.emplace(fused_node_name, std::move(trt_parser));
-  engines_.emplace(fused_node_name, std::move(trt_engine));
-  contexts_.emplace(fused_node_name, std::move(trt_context));
-  networks_.emplace(fused_node_name, std::move(trt_network));
-  input_info_[fused_node_name].push_back(input_indexes);
-  output_info_[fused_node_name].push_back(output_indexes);
-  output_info_[fused_node_name].push_back(output_types);
-  input_shape_ranges_[fused_node_name] = input_implicit_shape_ranges;
-  profiles_.emplace(fused_node_name, std::move(trt_profiles));
-
-  // Create EP Context nodes
+  // Create EP Context nodes while trt_engine still owns the built/loaded engine.
+  // Transfer ownership to engines_ only after validation and serialization.
   std::unique_ptr<EPContextNodeHelper> ep_ctx_node_helper = std::make_unique<EPContextNodeHelper>(*ep, topo_sorted_graph, fused_node);
   if (dump_ep_context_model_) {
+    RETURN_IF_NOT(trt_engine != nullptr, "EPContext creation requires static shapes or explicit shape profiles.");
     std::string compute_capability_hw_compat = compute_capability_;
     if (engine_cache_enable_ && engine_hw_compatible_) {
       compute_capability_hw_compat = "80+";
@@ -2137,20 +2195,38 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
     if (serialized_engine) {
       serialized_engine_pointer = reinterpret_cast<char*>(serialized_engine->data());
       serialized_engine_size = serialized_engine->size();
-    } else if (!serialized_engine && ep_context_embed_mode_ && engine_cache_enable_) {
+    } else if (ep_context_embed_mode_) {
       serialized_engine = std::unique_ptr<nvinfer1::IHostMemory>(trt_engine->serialize());
+      RETURN_IF_NOT(serialized_engine != nullptr, "Failed to serialize EPContext engine.");
       serialized_engine_pointer = reinterpret_cast<char*>(serialized_engine->data());
       serialized_engine_size = serialized_engine->size();
     }
 
-    ep_ctx_node_helper->CreateEPContextNode(engine_cache_path,
-                                            serialized_engine_pointer,
-                                            serialized_engine_size,
-                                            ep_context_embed_mode_,
-                                            compute_capability_hw_compat,
-                                            model_path_,
-                                            ep_context_node);
+    // Keep cache subdirectories while making the reference relative to the context model.
+    const std::string context_cache_ref = ep_context_embed_mode_
+        ? std::string{}
+        : (std::filesystem::u8path(engine_cache_relative_path_to_context_model_dir_) /
+           std::filesystem::u8path(engine_cache_path).filename()).generic_u8string();
+    RETURN_IF_ERROR(ep_ctx_node_helper->CreateEPContextNode(context_cache_ref,
+                                                           serialized_engine_pointer,
+                                                           serialized_engine_size,
+                                                           ep_context_embed_mode_,
+                                                           compute_capability_hw_compat,
+                                                           model_path_,
+                                                           getInferLibVersion(),
+                                                           ep_context_node));
   }
+
+  // Save TRT engine, other TRT objects and input/output info to map
+  parsers_.emplace(fused_node_name, std::move(trt_parser));
+  engines_.emplace(fused_node_name, std::move(trt_engine));
+  contexts_.emplace(fused_node_name, std::move(trt_context));
+  networks_.emplace(fused_node_name, std::move(trt_network));
+  input_info_[fused_node_name].push_back(input_indexes);
+  output_info_[fused_node_name].push_back(output_indexes);
+  output_info_[fused_node_name].push_back(output_types);
+  input_shape_ranges_[fused_node_name] = input_implicit_shape_ranges;
+  profiles_.emplace(fused_node_name, std::move(trt_profiles));
 
   std::unique_ptr<TensorrtComputeState> compute_state = std::make_unique<TensorrtComputeState>();
 
@@ -2248,7 +2324,7 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromPrecompiledEngine
                                                                                                       logger_,
                                                                                                       &trt_engine,
                                                                                                       runtime_.get(),
-                                                                                                      model_path_,
+                                                                                                      ep_context_file_path_,
                                                                                                       compute_capability_,
                                                                                                       weight_stripped_engine_enable_,
                                                                                                       onnx_model_folder_path_,
@@ -2362,7 +2438,7 @@ OrtStatus* ORT_API_CALL TensorrtExecutionProvider::CompileImpl(_In_ OrtEp* this_
                                                                _In_ const OrtNode** fused_nodes,
                                                                _In_ size_t count,
                                                                _Out_writes_all_(count) OrtNodeComputeInfo** node_compute_infos,
-                                                               _Out_writes_(count) OrtNode** ep_context_nodes) noexcept {
+                                                               _Out_writes_(count) OrtNode** ep_context_nodes) noexcept try {
   TensorrtExecutionProvider* ep = static_cast<TensorrtExecutionProvider*>(this_ptr);
   const OrtApi& ort_api = ep->ort_api;
 
@@ -2408,8 +2484,9 @@ OrtStatus* ORT_API_CALL TensorrtExecutionProvider::CompileImpl(_In_ OrtEp* this_
       output_map.emplace(name, i);
     }
 
-    OrtStatus* status;
-    if (EPContextNodeReader::GraphHasCtxNode(graphs[fused_node_idx], ort_api)) {
+    bool has_context_node = false;
+    RETURN_IF_ERROR(EPContextNodeReader::GraphHasCtxNode(graphs[fused_node_idx], ort_api, has_context_node));
+    if (has_context_node) {
       RETURN_IF_ERROR(ep->CreateNodeComputeInfoFromPrecompiledEngine(this_ptr, graphs[fused_node_idx], fused_node,
                                                                      input_map, output_map,
                                                                      &node_compute_infos_result[fused_node_idx]));
@@ -2421,6 +2498,15 @@ OrtStatus* ORT_API_CALL TensorrtExecutionProvider::CompileImpl(_In_ OrtEp* this_
   }
 
   return nullptr;
+} catch (const Ort::Exception& error) {
+  const auto& api = static_cast<TensorrtExecutionProvider*>(this_ptr)->ort_api;
+  return api.CreateStatus(error.GetOrtErrorCode(), error.what());
+} catch (const std::exception& error) {
+  const auto& api = static_cast<TensorrtExecutionProvider*>(this_ptr)->ort_api;
+  return api.CreateStatus(ORT_EP_FAIL, error.what());
+} catch (...) {
+  const auto& api = static_cast<TensorrtExecutionProvider*>(this_ptr)->ort_api;
+  return api.CreateStatus(ORT_EP_FAIL, "Unexpected exception in TensorRT CompileImpl.");
 }
 
 const char* ORT_API_CALL TensorrtExecutionProvider::GetNameImpl(const OrtEp* this_ptr) noexcept {
@@ -2691,7 +2777,7 @@ OrtStatus* TensorrtExecutionProvider::RefitEngine(std::string onnx_model_filenam
   if (serialize_refitted_engine) {
     std::string refitted_engine_cache = GetWeightRefittedEnginePath(weight_stripped_engine_cath_path);
     nvinfer1::IHostMemory* serialized_engine = trt_engine->serialize();
-    std::ofstream engine_file(refitted_engine_cache, std::ios::binary | std::ios::out);
+    std::ofstream engine_file(std::filesystem::u8path(refitted_engine_cache), std::ios::binary | std::ios::out);
     engine_file.write(reinterpret_cast<const char*>(serialized_engine->data()), serialized_engine->size());
     std::string message = "[TensorRT EP] Serialize the refitted engine to " + refitted_engine_cache;
     Ort::ThrowOnError(ort_api.Logger_LogMessage(&logger_,
@@ -2734,6 +2820,9 @@ TensorrtExecutionProvider::TensorrtExecutionProvider(TensorrtExecutionProviderFa
   ReleaseNodeComputeInfos = ReleaseNodeComputeInfosImpl;
   CreateSyncStreamForDevice = CreateSyncStreamForDeviceImpl;
   GetKernelRegistry = GetKernelRegistryImpl;
+#if ORT_API_VERSION >= 27
+  GetDefaultMemoryDevice = GetDefaultMemoryDeviceImpl;
+#endif
 
   // Initialize the execution provider.
 
@@ -2770,6 +2859,7 @@ TensorrtExecutionProvider::TensorrtExecutionProvider(TensorrtExecutionProviderFa
   size_t num_entries = 0;
   ort_api.GetKeyValuePairs(key_value_pairs, &keys, &values, &num_entries);
 
+  ProviderOptions context_options;
   for (size_t i = 0; i < num_entries; ++i) {
     const char* key = keys[i];
 
@@ -2778,6 +2868,10 @@ TensorrtExecutionProvider::TensorrtExecutionProvider(TensorrtExecutionProviderFa
       std::string key_str = key;
       const char* value = values[i];
       provider_options[key_str.substr(key_prefix.size())] = value;
+    } else if (std::strcmp(key, "ep.context_enable") == 0 ||
+               std::strcmp(key, "ep.context_embed_mode") == 0 ||
+               std::strcmp(key, "ep.context_file_path") == 0) {
+      context_options[key] = values[i];
     }
   }
 
@@ -2787,6 +2881,25 @@ TensorrtExecutionProvider::TensorrtExecutionProvider(TensorrtExecutionProviderFa
   info_ = TensorrtExecutionProviderInfo::FromProviderOptions(provider_options);
   info_.has_trt_options = true;
   device_id_ = info_.device_id;
+
+  // Generic session settings override only the corresponding legacy TRT option.
+  if (auto it = context_options.find("ep.context_enable"); it != context_options.end()) {
+    ENFORCE(it->second == "0" || it->second == "1", "ep.context_enable must be 0 or 1");
+    info_.dump_ep_context_model = it->second == "1";
+  }
+  if (auto it = context_options.find("ep.context_embed_mode"); it != context_options.end()) {
+    ENFORCE(it->second == "0" || it->second == "1", "ep.context_embed_mode must be 0 or 1");
+    info_.ep_context_embed_mode = it->second == "1" ? 1 : 0;
+  }
+  ENFORCE(info_.ep_context_embed_mode == 0 || info_.ep_context_embed_mode == 1,
+          "trt_ep_context_embed_mode must be 0 or 1");
+  if (auto it = context_options.find("ep.context_file_path"); it != context_options.end()) {
+    info_.ep_context_file_path = it->second;
+  }
+
+  cudaDeviceProp device_properties;
+  CUDA_CALL_THROW(cudaGetDeviceProperties(&device_properties, device_id_));
+  compute_capability_ = GetComputeCapacity(device_properties);
 
   std::string profile_min_shapes, profile_max_shapes, profile_opt_shapes;
 
@@ -2802,6 +2915,7 @@ TensorrtExecutionProvider::TensorrtExecutionProvider(TensorrtExecutionProviderFa
     max_partition_iterations_ = info_.max_partition_iterations;
     min_subgraph_size_ = info_.min_subgraph_size;
     max_workspace_size_ = info_.max_workspace_size;
+#if !defined(ORT_TENSORRT_STRONGLY_TYPED)
     fp16_enable_ = info_.fp16_enable;
     int8_enable_ = info_.int8_enable;
     bf16_enable_ = info_.bf16_enable;
@@ -2809,13 +2923,21 @@ TensorrtExecutionProvider::TensorrtExecutionProvider(TensorrtExecutionProviderFa
       int8_calibration_cache_name_ = info_.int8_calibration_table_name;
       int8_use_native_tensorrt_calibration_table_ = info_.int8_use_native_calibration_table;
     }
-    if (fp16_enable_ || int8_enable_) {  // DLA can only be enabled with FP16 or INT8
+#endif
+    if (info_.dla_enable) {  // TensorRT validates the model precision for DLA.
       dla_enable_ = info_.dla_enable;
       dla_core_ = info_.dla_core;
       dla_mem_pool_limit_ = info_.dla_mem_pool_limit;
       dla_gpu_fallback_enable_ = info_.dla_gpu_fallback_enable;
       dla_enable_uint8_asymmetric_quantization_ = info_.dla_enable_uint8_asymmetric_quantization;
       dla_adjust_for_dla_ = info_.dla_adjust_for_dla;
+    }
+    if (dla_enable_) {
+      // TensorRT loads its DLA compiler by filename later. Load the compiler
+      // and cuDLA runtime from beside the EP now, with Windows error details
+      // if either dependency cannot be loaded. These are no-ops on Linux.
+      EnsureDlaCompilerDependencyLoaded();
+      EnsureCuDlaDependencyLoaded();
     }
     dump_subgraphs_ = info_.dump_subgraphs;
     engine_cache_enable_ = info_.engine_cache_enable;
@@ -2850,9 +2972,11 @@ TensorrtExecutionProvider::TensorrtExecutionProvider(TensorrtExecutionProviderFa
     }
     force_sequential_engine_build_ = info_.force_sequential_engine_build;
     context_memory_sharing_enable_ = info_.context_memory_sharing_enable;
+#if !defined(ORT_TENSORRT_STRONGLY_TYPED)
     if (fp16_enable_ || bf16_enable_) {
       layer_norm_fp32_fallback_ = info_.layer_norm_fp32_fallback;
     }
+#endif
     build_heuristics_enable_ = info_.build_heuristics_enable;
     sparsity_enable_ = info_.sparsity_enable;
     builder_optimization_level_ = info_.builder_optimization_level;
@@ -2868,10 +2992,20 @@ TensorrtExecutionProvider::TensorrtExecutionProvider(TensorrtExecutionProviderFa
     // deprecate env provider option
   }
 
-  // In TRT 11.0 the standalone precision flags (FP16 / BF16 / INT8) were removed; networks are
-  // strongly-typed and precision is driven by the ONNX graph. Force the flags false so the rest of
-  // the EP does not emit the deprecated builder flags. DLA still re-asserts FP16 locally (see below).
-#if NV_TENSORRT_MAJOR >= 11
+  // Keep accepting legacy precision options for API compatibility. In a build
+  // against TensorRT 11.4+ they remain disabled, including for DLA; model tensor
+  // types and explicit quantization determine precision instead.
+#if defined(ORT_TENSORRT_STRONGLY_TYPED)
+  if (info_.fp16_enable || info_.bf16_enable || info_.int8_enable) {
+    const std::string message = "[TensorRT EP] Built with TensorRT " +
+        std::to_string(NV_TENSORRT_MAJOR) + "." + std::to_string(NV_TENSORRT_MINOR) + "." +
+        std::to_string(NV_TENSORRT_PATCH) + "." + std::to_string(NV_TENSORRT_BUILD) +
+        " (>= 11.4): trt_fp16_enable, trt_int8_enable, and trt_bf16_enable are disabled for this build and will be ignored. Precision must be expressed by the ONNX graph.";
+    Ort::ThrowOnError(ort_api.Logger_LogMessage(&logger_,
+                                                OrtLoggingLevel::ORT_LOGGING_LEVEL_WARNING,
+                                                message.c_str(), ORT_FILE, __LINE__, __FUNCTION__));
+  }
+#elif NV_TENSORRT_MAJOR >= 11
   if (fp16_enable_ || bf16_enable_ || int8_enable_) {
     std::string message = "[TensorRT EP] Compiled for TensorRT >= 11.0 - precision flags (BF16 / FP16 / INT8) have been removed and no longer have an effect. Strongly-typed will be used for all networks.";
     Ort::ThrowOnError(ort_api.Logger_LogMessage(&logger_,
@@ -2914,8 +3048,8 @@ TensorrtExecutionProvider::TensorrtExecutionProvider(TensorrtExecutionProviderFa
   }
 
   // If ep_context_file_path_ is provided as a directory, create it if it's not existed
-  if (dump_ep_context_model_ && !ep_context_file_path_.empty() && std::filesystem::path(ep_context_file_path_).extension().empty() && !std::filesystem::is_directory(ep_context_file_path_)) {
-    if (!std::filesystem::create_directory(ep_context_file_path_)) {
+  if (dump_ep_context_model_ && !ep_context_file_path_.empty() && std::filesystem::u8path(ep_context_file_path_).extension().empty() && !std::filesystem::is_directory(std::filesystem::u8path(ep_context_file_path_))) {
+    if (!std::filesystem::create_directory(std::filesystem::u8path(ep_context_file_path_))) {
       throw std::runtime_error("Failed to create directory " + ep_context_file_path_);
     }
   }
@@ -2927,25 +3061,15 @@ TensorrtExecutionProvider::TensorrtExecutionProvider(TensorrtExecutionProviderFa
   // The new cache path will be saved as the "ep_cache_context" node attritue of the EP context node.
   // For security reason, it needs to make sure the engine cache is saved inside context model directory.
   if (dump_ep_context_model_ && engine_cache_enable_) {
-    if (IsAbsolutePath(cache_path_)) {
-      std::string message = "In the case of dumping context model and for security purpose, the trt_engine_cache_path should be set with a relative path, but it is an absolute path:  " + cache_path_;
-      Ort::ThrowOnError(ort_api.Logger_LogMessage(&logger_,
-                                                  OrtLoggingLevel::ORT_LOGGING_LEVEL_ERROR,
-                                                  message.c_str(), ORT_FILE, __LINE__, __FUNCTION__));
-    }
-    if (IsRelativePathToParentPath(cache_path_)) {
-      std::string message = "In the case of dumping context model and for security purpose, The trt_engine_cache_path has '..', it's not allowed to point outside the directory.";
-      Ort::ThrowOnError(ort_api.Logger_LogMessage(&logger_,
-                                                  OrtLoggingLevel::ORT_LOGGING_LEVEL_ERROR,
-                                                  message.c_str(), ORT_FILE, __LINE__, __FUNCTION__));
-    }
+    ENFORCE(!IsAbsolutePath(cache_path_) && !IsRelativePathToParentPath(cache_path_),
+            "trt_engine_cache_path must remain relative to the EPContext model directory");
 
     // Engine cache relative path to context model directory.
     // It's used when dumping the "ep_cache_context" node attribute.
     engine_cache_relative_path_to_context_model_dir_ = cache_path_;
 
     // Make cache_path_ to be the relative path of ep_context_file_path_
-    cache_path_ = GetPathOrParentPathOfCtxModel(ep_context_file_path_).append(cache_path_).string();
+    cache_path_ = (GetPathOrParentPathOfCtxModel(ep_context_file_path_) / std::filesystem::u8path(cache_path_)).u8string();
   }
 
   // Hardware compatibility: pre-check on environment
@@ -2974,13 +3098,13 @@ TensorrtExecutionProvider::TensorrtExecutionProvider(TensorrtExecutionProviderFa
   }
 
   if (engine_cache_enable_ || int8_enable_ || timing_cache_enable_) {
-    if (!cache_path_.empty() && !fs::is_directory(cache_path_)) {
-      if (!fs::create_directory(cache_path_)) {
+    if (!cache_path_.empty() && !fs::is_directory(std::filesystem::u8path(cache_path_))) {
+      if (!fs::create_directory(std::filesystem::u8path(cache_path_))) {
         throw std::runtime_error("Failed to create directory " + cache_path_);
       }
     }
-    if (!global_cache_path_.empty() && !fs::is_directory(global_cache_path_)) {
-      if (!fs::create_directory(global_cache_path_)) {
+    if (!global_cache_path_.empty() && !fs::is_directory(std::filesystem::u8path(global_cache_path_))) {
+      if (!fs::create_directory(std::filesystem::u8path(global_cache_path_))) {
         throw std::runtime_error("Failed to create directory " + global_cache_path_);
       }
     }
@@ -3000,9 +3124,11 @@ TensorrtExecutionProvider::TensorrtExecutionProvider(TensorrtExecutionProviderFa
     }
   }
 
+#if !defined(ORT_TENSORRT_STRONGLY_TYPED)
   if (int8_enable_) {
     int8_calibration_cache_available_ = !int8_calibration_cache_name_.empty();
   }
+#endif
 
   /*
    * Parse explicit min/max/opt profile shapes from provider options.
@@ -3071,7 +3197,8 @@ TensorrtExecutionProvider::TensorrtExecutionProvider(TensorrtExecutionProviderFa
   // external stream:
   // If user provides "external" cuda stream, only this cuda stream will be used even if multiple threads are running InferenceSession.Run() concurrently.
   // So, no need to synchronize different streams after enqueueV3.
-  if (cuda_graph_enable_ || external_stream_) {
+  // DLA must complete before its tensor addresses are unregistered at run end.
+  if (!dla_enable_ && (cuda_graph_enable_ || external_stream_)) {
     sync_stream_after_enqueue_ = false;
   }
 
@@ -3195,7 +3322,7 @@ OrtStatus* TRTEpNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_ptr, void*
   auto& dds_output_allocator_map = dds_output_allocator_maps[fused_node_name];
 
   // Get default OrtMemoryInfo from factory's device cache
-  const OrtMemoryInfo* mem_info = ep.factory_.GetMemoryInfoByOrdinal(device_id, /* is pinned */ false);
+  const OrtMemoryInfo* mem_info = ep.factory_.GetMemoryInfoByOrdinal(device_id, /* is_pinned */ false, trt_state->dla_enable);
   if (mem_info == nullptr) {
     std::string err_msg = "TensorRT EP failed to get OrtMemoryInfo for device_id " + std::to_string(device_id) + " from provider factory.";
     return ep.ort_api.CreateStatus(ORT_EP_FAIL, err_msg.c_str());
@@ -3248,7 +3375,7 @@ OrtStatus* TRTEpNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_ptr, void*
 
   // If weight-stripped engine is enabled and refitted engine cache is not present,
   // TRT EP will use the engine cache with ".stripped.engine" appended to the end.
-  const std::filesystem::path engine_cache_fs_path = engine_cache_path;
+  const auto engine_cache_fs_path = std::filesystem::u8path(engine_cache_path);
   if (weight_stripped_engine_enable && !std::filesystem::exists(engine_cache_fs_path)) {
     engine_cache_path = cache_path_prefix + ".stripped.engine";
     weight_stripped_engine_refit = true;
@@ -3256,8 +3383,8 @@ OrtStatus* TRTEpNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_ptr, void*
 
   // Load serialized engine
   if (trt_state->engine_cache_enable && trt_engine == nullptr) {
-    std::ifstream engine_file(engine_cache_path, std::ios::binary | std::ios::in);
-    std::ifstream profile_file(profile_cache_path, std::ios::binary | std::ios::in);
+    std::ifstream engine_file(std::filesystem::u8path(engine_cache_path), std::ios::binary | std::ios::in);
+    std::ifstream profile_file(std::filesystem::u8path(profile_cache_path), std::ios::binary | std::ios::in);
     if (engine_file && !trt_state->engine_decryption_enable && profile_file) {
       // Deserialize profile
       shape_ranges = DeserializeProfileV2(profile_file);
@@ -3290,7 +3417,7 @@ OrtStatus* TRTEpNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_ptr, void*
       trt_engine = trt_state->engine->get();
       context_update = true;
 
-    } else if (trt_state->engine_decryption_enable && std::filesystem::exists(encrypted_engine_cache_path) &&
+    } else if (trt_state->engine_decryption_enable && std::filesystem::exists(std::filesystem::u8path(encrypted_engine_cache_path)) &&
                profile_file) {
       shape_ranges = DeserializeProfileV2(profile_file);
       std::string message = "[TensorRT EP] DeSerialized " + profile_cache_path;
@@ -3363,7 +3490,7 @@ OrtStatus* TRTEpNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_ptr, void*
     // platformHasFastInt8 and setInt8Calibrator (implicit quantization) were removed in TRT 11.
     // No #else needed: TRT 11's minimum GPU (Volta, SM 7.0) always has fast INT8 (SM 6.1+),
     // and explicit quantization via SetDynamicRange is used instead of setInt8Calibrator.
-#if NV_TENSORRT_MAJOR < 11
+#if !defined(ORT_TENSORRT_STRONGLY_TYPED) && NV_TENSORRT_MAJOR < 11
 #if defined(_MSC_VER)
 #pragma warning(push)
 #pragma warning(disable : 4996)
@@ -3382,7 +3509,7 @@ OrtStatus* TRTEpNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_ptr, void*
 #endif
     // Set precision flags. Removed in TRT 11 (strongly-typed networks); the enables are forced
     // false at construction, so this only applies pre-11.
-#if NV_TENSORRT_MAJOR < 11
+#if !defined(ORT_TENSORRT_STRONGLY_TYPED) && NV_TENSORRT_MAJOR < 11
 #if defined(_MSC_VER)
 #pragma warning(push)
 #pragma warning(disable : 4996)
@@ -3428,8 +3555,8 @@ OrtStatus* TRTEpNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_ptr, void*
       }
       trt_config->setDefaultDeviceType(nvinfer1::DeviceType::kDLA);
       trt_config->setDLACore(trt_state->dla_core);
-#if NV_TENSORRT_MAJOR >= 11
-      // DLA + explicit-QDQ requires FP16 mode (kFP16 deprecated but functional).
+#if NV_TENSORRT_MAJOR >= 11 && !defined(ORT_TENSORRT_STRONGLY_TYPED)
+      // Match the initial build: strongly typed builds do not set precision flags.
 #if defined(_MSC_VER)
 #pragma warning(push)
 #pragma warning(disable : 4996)
@@ -3615,7 +3742,7 @@ OrtStatus* TRTEpNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_ptr, void*
                                                          message.c_str(), ORT_FILE, __LINE__, __FUNCTION__));
         }
       } else {
-        std::ofstream file(engine_cache_path, std::ios::binary | std::ios::out);
+        std::ofstream file(std::filesystem::u8path(engine_cache_path), std::ios::binary | std::ios::out);
         file.write(reinterpret_cast<char*>(serialized_engine->data()), serialized_engine->size());
         std::string message = "[TensorRT EP] Serialized " + engine_cache_path;
         Ort::ThrowOnError(ep.ort_api.Logger_LogMessage(&ep.logger_,
@@ -3725,7 +3852,7 @@ OrtStatus* TRTEpNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_ptr, void*
     const auto tensor_shapes = tensor_info.GetShape();
 
     auto status = BindContextInput(ctx, trt_engine, trt_context, input_name, input_index, shape_tensor_values,
-                                   shape_tensor_values_int64, scratch_buffers, alloc, stream);
+                                   shape_tensor_values_int64, scratch_buffers, alloc, stream, trt_state->dla_enable);
     if (status != nullptr) {
       return ep.ort_api.CreateStatus(ORT_EP_FAIL, "BindContextInput failed.");
     }
@@ -3758,7 +3885,7 @@ OrtStatus* TRTEpNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_ptr, void*
     }
 
     auto status = BindContextOutput(ctx, trt_context, output_name, output_index, output_type, i, output_tensors,
-                                    output_dim_sizes, dds_output_allocator_map, scratch_buffers, alloc, buffers);
+                                    output_dim_sizes, dds_output_allocator_map, scratch_buffers, alloc, buffers, trt_state->dla_enable);
     if (status != nullptr) {
       return ep.ort_api.CreateStatus(ORT_EP_FAIL, "BindContextOutput failed.");
     }
@@ -3969,7 +4096,7 @@ OrtStatus* TRTEpEpContextNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_p
   std::unordered_map<std::string, std::vector<int64_t>> shape_tensor_values_int64;  // same as above but for int64 shape tensor input
 
   // Get default OrtMemoryInfo from factory's device cache
-  const OrtMemoryInfo* mem_info = ep.factory_.GetMemoryInfoByOrdinal(device_id, /* is pinned */ false);
+  const OrtMemoryInfo* mem_info = ep.factory_.GetMemoryInfoByOrdinal(device_id, /* is_pinned */ false, trt_state->dla_enable);
   if (mem_info == nullptr) {
     std::string err_msg = "TensorRT EP failed to get OrtMemoryInfo for device_id " + std::to_string(device_id) + " from provider factory.";
     return ep.ort_api.CreateStatus(ORT_EP_FAIL, err_msg.c_str());
@@ -4023,7 +4150,7 @@ OrtStatus* TRTEpEpContextNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_p
     const auto tensor_shapes = tensor_info.GetShape();
 
     auto status = BindContextInput(ctx, trt_engine, trt_context, input_name, input_index, shape_tensor_values,
-                                   shape_tensor_values_int64, scratch_buffers, alloc, stream);
+                                   shape_tensor_values_int64, scratch_buffers, alloc, stream, trt_state->dla_enable);
     if (status != nullptr) {
       return ep.ort_api.CreateStatus(ORT_EP_FAIL, "BindContextInput failed.");
     }
@@ -4056,7 +4183,7 @@ OrtStatus* TRTEpEpContextNodeComputeInfo::ComputeImpl(OrtNodeComputeInfo* this_p
     }
 
     auto status = BindContextOutput(ctx, trt_context, output_name, output_index, output_type, i, output_tensors,
-                                    output_dim_sizes, dds_output_allocator_map, scratch_buffers, alloc, buffers);
+                                    output_dim_sizes, dds_output_allocator_map, scratch_buffers, alloc, buffers, trt_state->dla_enable);
     if (status != nullptr) {
       return ep.ort_api.CreateStatus(ORT_EP_FAIL, "BindContextOutput failed.");
     }

@@ -14,6 +14,12 @@
 #include <NvInferRuntime.h>
 #include <NvOnnxParser.h>
 
+// TensorRT 11.4 and newer use the EP's strongly typed path. Precision comes
+// from the ONNX graph; legacy FP16/BF16/INT8 builder modes are disabled.
+#if NV_TENSORRT_MAJOR > 11 || (NV_TENSORRT_MAJOR == 11 && NV_TENSORRT_MINOR >= 4)
+#define ORT_TENSORRT_STRONGLY_TYPED
+#endif
+
 #if defined(_MSC_VER)
 #pragma warning(pop)
 #endif

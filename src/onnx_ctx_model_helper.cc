@@ -4,6 +4,7 @@
 #include <iostream>
 #include <fstream>
 #include <filesystem>
+#include <cstring>
 
 #include "utils/ep_utils.h"
 #include "utils/path_string.h"
@@ -19,7 +20,7 @@ bool IsAbsolutePath(const std::string& path_string) {
     return false;
   }
 
-  std::filesystem::path path(path_string);
+  const auto path = std::filesystem::u8path(path_string);
   return path.is_absolute();
 }
 
@@ -27,7 +28,7 @@ bool IsRelativePathToParentPath(const std::string& path_string) {
   if (path_string.empty())
     return false;
 
-  std::filesystem::path path(path_string);
+  auto path = std::filesystem::u8path(path_string);
 
   // Normalize things like "a/../b" or "foo//bar/.."
   path = path.lexically_normal();
@@ -48,8 +49,8 @@ std::filesystem::path GetPathOrParentPathOfCtxModel(const std::string& ep_contex
   if (ep_context_file_path.empty()) {
     return std::filesystem::path();
   }
-  std::filesystem::path ctx_path(ep_context_file_path);
-  if (std::filesystem::is_directory(ep_context_file_path)) {
+  const auto ctx_path = std::filesystem::u8path(ep_context_file_path);
+  if (std::filesystem::is_directory(ctx_path)) {
     return ctx_path;
   } else {
     return ctx_path.parent_path();
@@ -58,7 +59,7 @@ std::filesystem::path GetPathOrParentPathOfCtxModel(const std::string& ep_contex
 
 bool IsWeightStrippedEngineCache(std::filesystem::path& engine_cache_path) {
   // The weight-stripped engine cache has the naming of xxx.stripped.engine
-  return engine_cache_path.stem().extension().string() == ".stripped";
+  return engine_cache_path.stem().extension().u8string() == ".stripped";
 }
 
 /*
@@ -70,6 +71,7 @@ OrtStatus* EPContextNodeHelper::CreateEPContextNode(const std::string& engine_ca
                                                     const int64_t embed_mode,
                                                     const std::string& compute_capability,
                                                     const std::string& onnx_model_path,
+                                                    int trt_version,
                                                     OrtNode** ep_context_node) {
   // Helper to collect input or output names from an array of OrtValueInfo instances.
   auto collect_input_output_names = [&](gsl::span<const OrtValueInfo* const> value_infos,
@@ -107,11 +109,13 @@ OrtStatus* EPContextNodeHelper::CreateEPContextNode(const std::string& engine_ca
   RETURN_IF_ERROR(collect_input_output_names(fused_node_outputs, /*out*/ output_names));
 
   // Create node attributes. The CreateNode() function copies the attributes, so we have to release them.
-  std::array<OrtOpAttr*, 4> attributes = {};
+  std::array<OrtOpAttr*, 8> attributes = {};
   DeferOrtRelease<OrtOpAttr> defer_release_attrs(attributes.data(), attributes.size(), ort_api.ReleaseOpAttr);
 
   RETURN_IF_ERROR(ort_api.CreateOpAttr("embed_mode", &embed_mode, sizeof(int64_t), ORT_OP_ATTR_INT, &attributes[0]));
 
+  RETURN_IF_NOT(embed_mode == 0 || embed_mode == 1, "EPContext embed_mode must be 0 or 1.");
+  RETURN_IF_NOT(!embed_mode || (engine_data != nullptr && size > 0), "EPContext engine data is empty.");
   std::string engine_data_str = "";
   if (embed_mode) {
     if (size > 0) {
@@ -123,9 +127,20 @@ OrtStatus* EPContextNodeHelper::CreateEPContextNode(const std::string& engine_ca
     RETURN_IF_ERROR(ort_api.CreateOpAttr("ep_cache_context", engine_cache_path.c_str(), engine_cache_path.size(), ORT_OP_ATTR_STRING, &attributes[1]));
   }
 
-  ort_api.CreateOpAttr("hardware_architecture", compute_capability.c_str(), compute_capability.size(), ORT_OP_ATTR_STRING, &attributes[2]);
-  ort_api.CreateOpAttr("onnx_model_filename", std::filesystem::path(onnx_model_path).filename().string().c_str(), 1,
-                       ORT_OP_ATTR_STRING, &attributes[3]);
+  RETURN_IF_ERROR(ort_api.CreateOpAttr("hardware_architecture", compute_capability.c_str(), compute_capability.size(),
+                                      ORT_OP_ATTR_STRING, &attributes[2]));
+  const std::string onnx_model_filename = std::filesystem::u8path(onnx_model_path).filename().u8string();
+  RETURN_IF_ERROR(ort_api.CreateOpAttr("onnx_model_filename", onnx_model_filename.c_str(), onnx_model_filename.size(),
+                                      ORT_OP_ATTR_STRING, &attributes[3]));
+
+  const int64_t main_context = 1;  // Each partition contains an independent engine.
+  RETURN_IF_ERROR(ort_api.CreateOpAttr("main_context", &main_context, sizeof(main_context), ORT_OP_ATTR_INT, &attributes[4]));
+  RETURN_IF_ERROR(ort_api.CreateOpAttr("partition_name", fused_node_name, std::strlen(fused_node_name),
+                                      ORT_OP_ATTR_STRING, &attributes[5]));
+  const std::string sdk_version = std::to_string(trt_version);
+  RETURN_IF_ERROR(ort_api.CreateOpAttr("ep_sdk_version", sdk_version.c_str(), sdk_version.size(), ORT_OP_ATTR_STRING, &attributes[6]));
+  const std::string source = "TensorrtExecutionProvider";
+  RETURN_IF_ERROR(ort_api.CreateOpAttr("source", source.c_str(), source.size(), ORT_OP_ATTR_STRING, &attributes[7]));
 
   RETURN_IF_ERROR(model_editor_api.CreateNode("EPContext", "com.microsoft", fused_node_name, input_names.data(),
                                               input_names.size(), output_names.data(), output_names.size(),
@@ -134,53 +149,63 @@ OrtStatus* EPContextNodeHelper::CreateEPContextNode(const std::string& engine_ca
   return nullptr;
 }
 
-/*
- *  Check whether the graph has the EP context node.
- *  The node can contain the precompiled engine info for TRT EP to directly load the engine.
- *
- *  Note: Please see more details about "EPContext" contrib op in contrib_defs.cc
- */
-bool EPContextNodeReader::GraphHasCtxNode(const OrtGraph* graph, const OrtApi& ort_api) {
+// Identifies EPContext nodes that this EP can claim and deserialize. GetCapability
+// checks each node before bypassing the TensorRT ONNX parser; compilation and
+// context loading reuse the same check to avoid consuming another EP's context.
+// A matching node has domain "com.microsoft" and source "TensorrtExecutionProvider".
+// Missing or empty source attributes are accepted for legacy TensorRT models.
+// Returns nullptr when the check succeeds, with the result in is_context_node;
+// returns an error status for ORT API failures or malformed source metadata.
+OrtStatus* EPContextNodeReader::IsTensorRTContextNode(const OrtNode* node, const OrtApi& ort_api,
+                                                       bool& is_context_node) {
+  is_context_node = false;
+  const char* op_type = nullptr;
+  const char* domain = nullptr;
+  RETURN_IF_ERROR(ort_api.Node_GetOperatorType(node, &op_type));
+  RETURN_IF_ERROR(ort_api.Node_GetDomain(node, &domain));
+  if (std::strcmp(op_type, "EPContext") != 0 || std::strcmp(domain, "com.microsoft") != 0) return nullptr;
+
+  const OrtOpAttr* source_attr = nullptr;
+  OrtStatus* status = ort_api.Node_GetAttributeByName(node, "source", &source_attr);
+  if (status != nullptr) {
+    // Only a missing attribute is a legacy case; propagate other lookup failures.
+    if (ort_api.GetErrorCode(status) != ORT_NOT_FOUND) return status;
+    ort_api.ReleaseStatus(status);
+  }
+  // Older TensorRT context models did not write a source attribute.
+  if (source_attr == nullptr) {
+    is_context_node = true;
+    return nullptr;
+  }
+
+  OrtOpAttrType type;
+  RETURN_IF_ERROR(ort_api.OpAttr_GetType(source_attr, &type));
+  RETURN_IF_NOT(type == ORT_OP_ATTR_STRING, "EPContext source must be a string.");
+  std::string source;
+  RETURN_IF_ERROR(Ort::ConstOpAttr(source_attr).GetValue(source));
+  is_context_node = source.empty() || source == "TensorrtExecutionProvider";
+  return nullptr;
+}
+
+// Finds whether a fused graph contains a TensorRT context, so CompileImpl can
+// choose engine deserialization instead of building an engine from ONNX nodes.
+OrtStatus* EPContextNodeReader::GraphHasCtxNode(const OrtGraph* graph, const OrtApi& ort_api,
+                                               bool& has_context_node) {
+  has_context_node = false;
   size_t num_nodes = 0;
   RETURN_IF_ERROR(ort_api.Graph_GetNumNodes(graph, &num_nodes));
-
   std::vector<const OrtNode*> nodes(num_nodes);
   RETURN_IF_ERROR(ort_api.Graph_GetNodes(graph, nodes.data(), nodes.size()));
-
-  for (size_t i = 0; i < num_nodes; ++i) {
-    auto node = nodes[i];
+  for (const auto* node : nodes) {
     if (node == nullptr) continue;
-
-    const char* op_type = nullptr;
-    RETURN_IF_ERROR(ort_api.Node_GetOperatorType(node, &op_type));
-    if (std::string(op_type) == "EPContext") {
-      // Only match EPContext nodes that belong to this EP.
-      // If the "source" attribute is present and doesn't match, skip the node.
-      Ort::ConstNode ort_node(node);
-      Ort::ConstOpAttr source_attr;
-      OrtStatus* status = ort_node.GetAttributeByName("source", source_attr);
-      if (status == nullptr && source_attr != nullptr) {
-        if (source_attr.GetType() == OrtOpAttrType::ORT_OP_ATTR_STRING) {
-          std::string source_value;
-          OrtStatus* val_status = source_attr.GetValue<std::string>(source_value);
-          if (val_status == nullptr && !source_value.empty() &&
-              source_value != "TensorrtExecutionProvider") {
-            // Source doesn't match this EP, skip this node
-            continue;
-          }
-          if (val_status != nullptr) {
-            ort_api.ReleaseStatus(val_status);
-          }
-        }
-      }
-      if (status != nullptr) {
-        // Attribute not found — backward compatibility, treat as ours
-        ort_api.ReleaseStatus(status);
-      }
-      return true;
+    bool is_context_node = false;
+    RETURN_IF_ERROR(IsTensorRTContextNode(node, ort_api, is_context_node));
+    if (is_context_node) {
+      has_context_node = true;
+      break;
     }
   }
-  return false;
+  return nullptr;
 }
 
 /*
@@ -194,9 +219,9 @@ OrtStatus* EPContextNodeReader::ValidateEPCtxNode(const OrtGraph* graph) const {
   std::vector<const OrtNode*> nodes(num_nodes);
   RETURN_IF_ERROR(ort_api.Graph_GetNodes(graph, nodes.data(), nodes.size()));
 
-  const char* op_type = nullptr;
-  RETURN_IF_ERROR(ort_api.Node_GetOperatorType(nodes[0], &op_type));
-  RETURN_IF_NOT(std::string(op_type) == "EPContext", "Node is not an EPContext node.");
+  bool is_context_node = false;
+  RETURN_IF_ERROR(IsTensorRTContextNode(nodes[0], ort_api, is_context_node));
+  RETURN_IF_NOT(is_context_node, "Node is not a TensorRT EPContext node.");
 
   // TODO: Check compute capability and others
 
@@ -217,36 +242,13 @@ OrtStatus* EPContextNodeReader::GetEpContextFromGraph(const OrtGraph& graph) {
   auto& node = nodes[0];
   Ort::ConstOpAttr node_attr;
 
-  // Check "source" attribute: reject EPContext nodes from other EPs
-  // (This is a secondary check; GraphHasCtxNode already filters by source.)
-  OrtStatus* source_status = node.GetAttributeByName("source", node_attr);
-  if (source_status == nullptr && node_attr != nullptr) {
-    if (node_attr.GetType() == OrtOpAttrType::ORT_OP_ATTR_STRING) {
-      std::string source_value;
-      OrtStatus* val_status = node_attr.GetValue<std::string>(source_value);
-      if (val_status == nullptr && !source_value.empty() &&
-          source_value != "TensorrtExecutionProvider") {
-        return ort_api.CreateStatus(ORT_EP_FAIL,
-                                    ("[TensorRT EP] EPContext node has source '" + source_value +
-                                     "' which does not match this EP. Skipping.")
-                                        .c_str());
-      }
-      if (val_status != nullptr) {
-        ort_api.ReleaseStatus(val_status);
-      }
-    }
-  }
-  if (source_status != nullptr) {
-    // "source" attribute not found — backward compatibility, proceed
-    ort_api.ReleaseStatus(source_status);
-  }
-
   // Get "embed_mode" attribute
   RETURN_IF_ERROR(node.GetAttributeByName("embed_mode", node_attr));
   RETURN_IF_NOT(node_attr.GetType() == OrtOpAttrType::ORT_OP_ATTR_INT, "\'embed_mode\' attribute should be integer type.");
 
   int64_t embed_mode = 0;
   RETURN_IF_ERROR(node_attr.GetValue(embed_mode));
+  RETURN_IF_NOT(embed_mode == 0 || embed_mode == 1, "EPContext embed_mode must be 0 or 1.");
 
   // Only make path checks if model not provided as byte buffer
   bool make_secure_path_checks = !ort_graph.GetModelPath().empty();
@@ -258,6 +260,7 @@ OrtStatus* EPContextNodeReader::GetEpContextFromGraph(const OrtGraph& graph) {
 
     std::string context_binary;
     RETURN_IF_ERROR(node_attr.GetValue<std::string>(context_binary));
+    RETURN_IF_NOT(!context_binary.empty(), "EPContext engine data is empty.");
 
     *(trt_engine_) = std::unique_ptr<nvinfer1::ICudaEngine>(trt_runtime_->deserializeCudaEngine(const_cast<char*>(context_binary.c_str()),
                                                                                                 static_cast<size_t>(context_binary.length())));
@@ -308,10 +311,17 @@ OrtStatus* EPContextNodeReader::GetEpContextFromGraph(const OrtGraph& graph) {
     }
 
     // The engine cache and context model (current model) should be in the same directory
-    std::filesystem::path ctx_model_dir(GetPathOrParentPathOfCtxModel(ep_context_model_path_));
-    auto engine_cache_path = ctx_model_dir.append(cache_path);
+    // Prefer the loaded model's actual location so the model and engine can move together.
+    // A memory-loaded model can instead provide ep.context_file_path as its base path.
+    const auto model_path = ort_graph.GetModelPath();
+    RETURN_IF_NOT(!model_path.empty() || !ep_context_model_path_.empty(),
+                  "External EPContext loaded from memory requires ep.context_file_path.");
+    const auto ctx_model_dir = model_path.empty()
+                                  ? GetPathOrParentPathOfCtxModel(ep_context_model_path_)
+                                  : std::filesystem::path(model_path).parent_path();
+    auto engine_cache_path = ctx_model_dir / std::filesystem::u8path(cache_path);
 
-    std::string message = "[TensorRT EP] GetEpContextFromGraph engine_cache_path: " + engine_cache_path.string();
+    std::string message = "[TensorRT EP] GetEpContextFromGraph engine_cache_path: " + engine_cache_path.u8string();
     Ort::ThrowOnError(ort_api.Logger_LogMessage(&logger_,
                                                 OrtLoggingLevel::ORT_LOGGING_LEVEL_VERBOSE,
                                                 message.c_str(), ORT_FILE, __LINE__, __FUNCTION__));
@@ -323,37 +333,41 @@ OrtStatus* EPContextNodeReader::GetEpContextFromGraph(const OrtGraph& graph) {
 
     // If the serialized refitted engine is present, use it directly without refitting the engine again
     if (weight_stripped_engine_refit_) {
-      const std::filesystem::path refitted_engine_cache_path = GetWeightRefittedEnginePath(engine_cache_path.string());
+      const auto refitted_engine_cache_path = std::filesystem::u8path(GetWeightRefittedEnginePath(engine_cache_path.u8string()));
       if (std::filesystem::exists(refitted_engine_cache_path)) {
-        std::string message = "[TensorRT EP] " + refitted_engine_cache_path.string() + " exists.";
+        std::string message = "[TensorRT EP] " + refitted_engine_cache_path.u8string() + " exists.";
         Ort::ThrowOnError(ort_api.Logger_LogMessage(&logger_,
                                                     OrtLoggingLevel::ORT_LOGGING_LEVEL_VERBOSE,
                                                     message.c_str(), ORT_FILE, __LINE__, __FUNCTION__));
-        engine_cache_path = refitted_engine_cache_path.string();
+        engine_cache_path = refitted_engine_cache_path;
         weight_stripped_engine_refit_ = false;
       }
     }
 
     if (!std::filesystem::exists(engine_cache_path)) {
       std::string error_msg =
-          "TensorRT EP can't find engine cache: " + engine_cache_path.string() +
+          "TensorRT EP can't find engine cache: " + engine_cache_path.u8string() +
           ". Please make sure engine cache is in the same directory or sub-directory of context model.";
       return ort_api.CreateStatus(ORT_EP_FAIL, error_msg.c_str());
     }
 
-    std::ifstream engine_file(engine_cache_path.string(), std::ios::binary | std::ios::in);
+    std::ifstream engine_file(engine_cache_path, std::ios::binary | std::ios::in);
+    RETURN_IF_NOT(engine_file.is_open(), "Cannot open EPContext engine cache: ", engine_cache_path.u8string());
     engine_file.seekg(0, std::ios::end);
-    size_t engine_size = engine_file.tellg();
+    const auto file_size = engine_file.tellg();
+    RETURN_IF_NOT(file_size > 0, "EPContext engine cache is empty or unreadable: ", engine_cache_path.u8string());
+    const size_t engine_size = static_cast<size_t>(file_size);
     engine_file.seekg(0, std::ios::beg);
     std::unique_ptr<char[]> engine_buf{new char[engine_size]};
-    engine_file.read((char*)engine_buf.get(), engine_size);
+    RETURN_IF_NOT(engine_file.read(engine_buf.get(), static_cast<std::streamsize>(engine_size)),
+                  "Cannot read EPContext engine cache: ", engine_cache_path.u8string());
     *(trt_engine_) = std::unique_ptr<nvinfer1::ICudaEngine>(trt_runtime_->deserializeCudaEngine(engine_buf.get(), engine_size));
     if (!(*trt_engine_)) {
-      std::string error_msg = "TensorRT EP could not deserialize engine from cache: " + engine_cache_path.string();
+      std::string error_msg = "TensorRT EP could not deserialize engine from cache: " + engine_cache_path.u8string();
       return ort_api.CreateStatus(ORT_EP_FAIL, error_msg.c_str());
     }
 
-    message = "[TensorRT EP] DeSerialized " + engine_cache_path.string();
+    message = "[TensorRT EP] DeSerialized " + engine_cache_path.u8string();
     Ort::ThrowOnError(ort_api.Logger_LogMessage(&logger_,
                                                 OrtLoggingLevel::ORT_LOGGING_LEVEL_VERBOSE,
                                                 message.c_str(), ORT_FILE, __LINE__, __FUNCTION__));
@@ -363,7 +377,7 @@ OrtStatus* EPContextNodeReader::GetEpContextFromGraph(const OrtGraph& graph) {
       RETURN_IF_NOT(node_attr.GetType() == OrtOpAttrType::ORT_OP_ATTR_STRING, "\'onnx_model_filename\' attribute should be string type.");
       std::string onnx_model_filename;
       RETURN_IF_ERROR(node_attr.GetValue<std::string>(onnx_model_filename));
-      std::string weight_stripped_engine_cache = engine_cache_path.string();
+      std::string weight_stripped_engine_cache = engine_cache_path.u8string();
       auto status = ep_.RefitEngine(onnx_model_filename,
                                     onnx_model_folder_path_,
                                     weight_stripped_engine_cache,
@@ -395,8 +409,8 @@ OrtStatus* EPContextNodeReader::GetEpContextFromGraph(const OrtGraph& graph) {
  * The cache name of weight-refitted engine is TensorrtExecutionProvider_TRTKernel_XXXXX.engine
  */
 std::string GetWeightRefittedEnginePath(std::string stripped_engine_cache) {
-  std::filesystem::path stripped_engine_cache_path(stripped_engine_cache);
-  std::string refitted_engine_cache_path = stripped_engine_cache_path.stem().stem().string() + ".engine";
+  const auto stripped_engine_cache_path = std::filesystem::u8path(stripped_engine_cache);
+  std::string refitted_engine_cache_path = stripped_engine_cache_path.stem().stem().u8string() + ".engine";
   return refitted_engine_cache_path;
 }
 }  // namespace trt_ep

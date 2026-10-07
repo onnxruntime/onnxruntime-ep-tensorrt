@@ -260,6 +260,9 @@ struct TensorrtExecutionProvider : public OrtEp, public ApiPtrs {
   */
   std::unique_lock<std::mutex> GetApiLock() const;
 
+  bool IsDlaEnabled() const noexcept { return dla_enable_; }
+  int GetDeviceId() const noexcept { return device_id_; }
+
   std::unordered_map<std::string, std::string> trt_node_name_with_precision_;
   std::unordered_map<std::string, std::unordered_map<std::string, float>> dynamic_range_map_;
   std::unordered_map<std::string, std::string> cache_suffix_;
@@ -317,6 +320,10 @@ struct TensorrtExecutionProvider : public OrtEp, public ApiPtrs {
 
  private:
   static const char* ORT_API_CALL GetNameImpl(const OrtEp* this_ptr) noexcept;
+#if ORT_API_VERSION >= 27
+  static OrtStatus* ORT_API_CALL GetDefaultMemoryDeviceImpl(
+      const OrtEp* this_ptr, const OrtMemoryDevice** device) noexcept;
+#endif
   static OrtStatus* ORT_API_CALL GetCapabilityImpl(OrtEp* this_ptr, const OrtGraph* graph,
                                                    OrtEpGraphSupportInfo* graph_support_info) noexcept;
   static OrtStatus* ORT_API_CALL CompileImpl(_In_ OrtEp* this_ptr, _In_ const OrtGraph** graphs,

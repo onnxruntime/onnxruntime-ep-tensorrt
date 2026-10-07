@@ -38,14 +38,14 @@ if(NOT TRT_MAJOR_VERSION)
 endif()
 message(STATUS "TRT major version: ${TRT_MAJOR_VERSION}")
 
-# CMake config to force dynamic debug CRT or dynamic release CRT globally for all dependencies.
+# Use the static MSVC runtime consistently across the EP and its dependencies.
 if(MSVC)
-  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
 option(onnxruntime_ep_tensorrt_INSTALL "Install onnxruntime_ep_tensorrt binaries and files" ON)
 option(onnxruntime_ep_tensorrt_OBJECT_CACHE "Enable object caching using either sccache/ccache" ON)
-option(CMAKE_CUDA_ARCHITECTURES "Version of CUDA architectures to enable" 86)
+set(CMAKE_CUDA_ARCHITECTURES "86" CACHE STRING "CUDA architectures to enable")
 
 if(onnxruntime_ep_tensorrt_OBJECT_CACHE)
   find_program(SCCACHE_PROGRAM sccache)
@@ -94,6 +94,23 @@ endif()
 enable_language(CUDA) # via nvcc to get the CUDA tool kit
 find_package(CUDAToolkit REQUIRED)
 
+# Some Windows CUDA toolkits resolve cudart from lib/x64 even when MSVC
+# targets ARM64. Use the compiler architecture; the host processor may be x64.
+if(WIN32 AND (CMAKE_CXX_COMPILER_ARCHITECTURE_ID STREQUAL "ARM64" OR
+              CMAKE_GENERATOR_PLATFORM STREQUAL "ARM64" OR
+              CMAKE_EXE_LINKER_FLAGS MATCHES "[Aa][Rr][Mm]64"))
+  get_target_property(_cudart_location CUDA::cudart IMPORTED_LOCATION)
+  file(TO_CMAKE_PATH "${_cudart_location}" _cudart_location)
+  if(_cudart_location MATCHES "/x64/")
+    string(REPLACE "/x64/" "/arm64/" _cudart_arm64 "${_cudart_location}")
+    if(NOT EXISTS "${_cudart_arm64}")
+      message(FATAL_ERROR "ARM64 CUDA runtime library not found: ${_cudart_arm64}")
+    endif()
+    set_target_properties(CUDA::cudart PROPERTIES IMPORTED_LOCATION "${_cudart_arm64}")
+    message(STATUS "ARM64 CUDA runtime: ${_cudart_arm64}")
+  endif()
+endif()
+
 file(GLOB onnxruntime_ep_tensorrt_SRC CONFIGURE_DEPENDS
   "./src/*.cc"
   "./src/kernels/*.cc"
@@ -121,7 +138,7 @@ message(STATUS "ORT_INCLUDE_DIR: ${ORT_INCLUDE_DIR}")
 
 # Add protobuf
 if(WIN32)
-  # Build protobuf as static library, but using dynamic runtime
+  # Build protobuf as a static library, matching the project's static CRT.
   set(BUILD_SHARED_LIBS OFF)
 endif()
 
@@ -131,10 +148,33 @@ FetchContent_Declare(
   GIT_TAG        v21.12  # Use a specific tag or commit
 )
 set(protobuf_BUILD_TESTS OFF CACHE INTERNAL "Disable tests")
-set(protobuf_MSVC_STATIC_RUNTIME OFF CACHE INTERNAL "Force build static runtime")
+set(protobuf_MSVC_STATIC_RUNTIME ON CACHE INTERNAL "Match the project's static MSVC runtime")
+
+# Cross-compilation needs a protoc executable that runs on the build host.
+# Use -DPROTOC_EXECUTABLE=/path/to/host/protoc (matching protobuf v21.12).
+if(PROTOC_EXECUTABLE)
+  get_filename_component(PROTOC_EXECUTABLE "${PROTOC_EXECUTABLE}" ABSOLUTE)
+  if(NOT EXISTS "${PROTOC_EXECUTABLE}" OR IS_DIRECTORY "${PROTOC_EXECUTABLE}")
+    message(FATAL_ERROR "PROTOC_EXECUTABLE is not a file: ${PROTOC_EXECUTABLE}")
+  endif()
+  execute_process(COMMAND "${PROTOC_EXECUTABLE}" --version
+    RESULT_VARIABLE _protoc_result OUTPUT_VARIABLE _protoc_version
+    ERROR_VARIABLE _protoc_error OUTPUT_STRIP_TRAILING_WHITESPACE TIMEOUT 10)
+  if(NOT _protoc_result STREQUAL "0")
+    message(FATAL_ERROR "Host protoc cannot run: ${PROTOC_EXECUTABLE}: ${_protoc_error}")
+  endif()
+  set(protobuf_BUILD_PROTOC_BINARIES OFF CACHE BOOL "Use the supplied host protoc" FORCE)
+endif()
 FetchContent_MakeAvailable(protobuf)
 
+if(PROTOC_EXECUTABLE AND NOT TARGET protobuf::protoc)
+  add_executable(protobuf::protoc IMPORTED GLOBAL)
+  set_target_properties(protobuf::protoc PROPERTIES IMPORTED_LOCATION "${PROTOC_EXECUTABLE}")
+  message(STATUS "Using host protoc: ${PROTOC_EXECUTABLE} (${_protoc_version})")
+endif()
+
 # Add ONNX
+set(ONNX_USE_MSVC_STATIC_RUNTIME ON CACHE INTERNAL "Match the project's static MSVC runtime")
 FetchContent_Declare(
   onnx
   GIT_REPOSITORY https://github.com/onnx/onnx.git
@@ -162,6 +202,11 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(flatbuffers)
 
 if(WIN32) # Windows
+  set(TRT_RUNTIME_DLL_NAME "nvinfer_${TRT_MAJOR_VERSION}.dll")
+  set(TRT_PLUGIN_DLL_NAME "nvinfer_plugin_${TRT_MAJOR_VERSION}.dll")
+  set(TRT_ONNX_PARSER_DLL_NAME "nvonnxparser_${TRT_MAJOR_VERSION}.dll")
+  set(TRT_DLA_COMPILER_DLL_NAME "nvdla_compiler.dll")
+
   set(TRT_LIBS
     "${TENSORRT_HOME}/lib/nvinfer_${TRT_MAJOR_VERSION}.lib"
     "${TENSORRT_HOME}/lib/nvinfer_plugin_${TRT_MAJOR_VERSION}.lib"
@@ -169,7 +214,79 @@ if(WIN32) # Windows
   )
   set(ORT_LIBS "${ORT_LIBRARY_DIR}/onnxruntime.lib")
 
-  target_link_options(onnxruntime_ep_tensorrt PRIVATE "-DEF:${CMAKE_SOURCE_DIR}/src/tensorrt_execution_provider.def")
+  target_compile_definitions(onnxruntime_ep_tensorrt PRIVATE
+    TRT_RUNTIME_DLL_NAME="${TRT_RUNTIME_DLL_NAME}"
+    TRT_PLUGIN_DLL_NAME="${TRT_PLUGIN_DLL_NAME}"
+    TRT_ONNX_PARSER_DLL_NAME="${TRT_ONNX_PARSER_DLL_NAME}"
+    TRT_DLA_COMPILER_DLL_NAME="${TRT_DLA_COMPILER_DLL_NAME}"
+  )
+
+  target_link_options(onnxruntime_ep_tensorrt PRIVATE
+    "-DEF:${CMAKE_SOURCE_DIR}/src/tensorrt_execution_provider.def"
+    "/DELAYLOAD:${TRT_RUNTIME_DLL_NAME}"
+    "/DELAYLOAD:${TRT_PLUGIN_DLL_NAME}"
+    "/DELAYLOAD:${TRT_ONNX_PARSER_DLL_NAME}"
+  )
+
+  # The EP-relative delay loader requires the complete TensorRT runtime set to
+  # be co-located with the EP. Include every runtime DLL because TensorRT loads
+  # builder/resource libraries dynamically in addition to its PE imports.
+  file(TO_CMAKE_PATH "${TENSORRT_HOME}" _tensorrt_home_cmake_path)
+  file(GLOB TRT_RUNTIME_DLLS CONFIGURE_DEPENDS
+    "${_tensorrt_home_cmake_path}/bin/*.dll"
+    "${_tensorrt_home_cmake_path}/lib/*.dll"
+    "${_tensorrt_home_cmake_path}/*.dll"
+  )
+  if(NOT TRT_RUNTIME_DLLS)
+    message(FATAL_ERROR
+      "No TensorRT runtime DLLs found under ${TENSORRT_HOME}. "
+      "Expected DLLs under bin/, lib/, or the TensorRT root.")
+  endif()
+
+  # cuDLA for Windows ARM64 is distributed in the DTK EP package rather than
+  # the CUDA toolkit or TensorRT SDK. Allow an explicit path and recognize the
+  # standard sibling layouts used by DTK drops.
+  set(CUDLA_DLL_PATH "" CACHE FILEPATH
+      "Path to the target-architecture cudla.dll to stage beside the EP")
+  if(CMAKE_CXX_COMPILER_ARCHITECTURE_ID STREQUAL "ARM64" OR
+     CMAKE_GENERATOR_PLATFORM STREQUAL "ARM64" OR
+     CMAKE_EXE_LINKER_FLAGS MATCHES "[Aa][Rr][Mm]64")
+    if(CUDLA_DLL_PATH AND NOT EXISTS "${CUDLA_DLL_PATH}")
+      message(FATAL_ERROR "CUDLA_DLL_PATH does not exist: ${CUDLA_DLL_PATH}")
+    endif()
+
+    if(NOT CUDLA_DLL_PATH)
+      get_filename_component(_tensorrt_parent "${_tensorrt_home_cmake_path}" DIRECTORY)
+      get_filename_component(_tensorrt_grandparent "${_tensorrt_parent}" DIRECTORY)
+      find_file(_detected_cudla_dll
+        NAMES cudla.dll
+        HINTS
+          "${_tensorrt_home_cmake_path}/NV_TENSORRT_ARM64_EP_PACKAGE"
+          "${_tensorrt_parent}/NV_TENSORRT_ARM64_EP_PACKAGE"
+          "${_tensorrt_grandparent}/NV_TENSORRT_ARM64_EP_PACKAGE"
+        NO_DEFAULT_PATH
+      )
+      if(_detected_cudla_dll)
+        set(CUDLA_DLL_PATH "${_detected_cudla_dll}" CACHE FILEPATH
+            "Path to the target-architecture cudla.dll to stage beside the EP" FORCE)
+      endif()
+    endif()
+
+    if(CUDLA_DLL_PATH)
+      get_filename_component(CUDLA_DLL_NAME "${CUDLA_DLL_PATH}" NAME)
+      target_compile_definitions(onnxruntime_ep_tensorrt PRIVATE
+        CUDLA_DLL_NAME="${CUDLA_DLL_NAME}"
+      )
+      list(APPEND TRT_RUNTIME_DLLS "${CUDLA_DLL_PATH}")
+      list(REMOVE_DUPLICATES TRT_RUNTIME_DLLS)
+      message(STATUS "App-local cuDLA runtime: ${CUDLA_DLL_PATH}")
+    else()
+      message(WARNING
+        "cudla.dll was not found for the ARM64 target. Set CUDLA_DLL_PATH to "
+        "the cudla.dll from NV_TENSORRT_ARM64_EP_PACKAGE to run DLA without PATH.")
+    endif()
+  endif()
+
 else()
   set(TRT_LIBS
     "${TENSORRT_HOME}/libnvinfer.so.${TRT_MAJOR_VERSION}"
@@ -200,6 +317,18 @@ target_link_libraries(onnxruntime_ep_tensorrt PRIVATE
   protobuf::libprotobuf
 )
 
+if(WIN32)
+  target_link_libraries(onnxruntime_ep_tensorrt PRIVATE delayimp)
+
+  add_custom_command(TARGET onnxruntime_ep_tensorrt POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      ${TRT_RUNTIME_DLLS}
+      "$<TARGET_FILE_DIR:onnxruntime_ep_tensorrt>/"
+    COMMAND_EXPAND_LISTS
+    COMMENT "Copying TensorRT runtime DLLs next to the plugin EP"
+  )
+endif()
+
 configure_file(
   "${PROJECT_SOURCE_DIR}/cmake/onnxruntime_ep_tensorrt_config_version.cmake.in"
   "${CMAKE_CURRENT_BINARY_DIR}/onnxruntime_ep_tensorrt_config_version.cmake"
@@ -222,13 +351,15 @@ if(onnxruntime_ep_tensorrt_BUILD_TESTS)
     GIT_REPOSITORY https://github.com/google/googletest.git
     GIT_TAG        v1.14.0
   )
-  set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+  set(gtest_force_shared_crt OFF CACHE BOOL "Match the project's static MSVC runtime" FORCE)
   set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
   FetchContent_MakeAvailable(googletest)
 
   add_executable(trt_ep_tests
     tests/cuda_graph_test.cc
     tests/tensorrt_basic_test.cc
+    tests/tensorrt_dla_test.cc
+    tests/tensorrt_ep_context_test.cc
   )
   target_compile_definitions(trt_ep_tests PRIVATE
     -DONNX_NAMESPACE=onnx
@@ -290,6 +421,10 @@ if(onnxruntime_ep_tensorrt_INSTALL)
           "${CMAKE_CURRENT_BINARY_DIR}/onnxruntime_ep_tensorrt_config_version.cmake"
     DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/onnxruntime_ep_tensorrt"
   )
+
+  if(WIN32)
+    install(FILES ${TRT_RUNTIME_DLLS} DESTINATION ${CMAKE_INSTALL_BINDIR})
+  endif()
 
   install(TARGETS onnxruntime_ep_tensorrt GSL flatbuffers EXPORT onnxruntime_ep_tensorrt_targets)
   install(EXPORT onnxruntime_ep_tensorrt_targets

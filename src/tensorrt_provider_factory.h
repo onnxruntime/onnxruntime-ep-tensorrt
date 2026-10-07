@@ -29,11 +29,12 @@ struct TensorrtExecutionProviderFactory : public OrtEpFactory, public ApiPtrs {
   // Called by child OrtEp instances to retrieve the cached kernel registry for that EP.
   OrtStatus* GetKernelRegistryForEp(TensorrtExecutionProvider& ep, /*out*/ const OrtKernelRegistry** kernel_registry);
 
-  const OrtMemoryInfo* GetMemoryInfoByOrdinal(int cuda_ordinal, bool is_pinned);
+  const OrtMemoryInfo* GetMemoryInfoByOrdinal(int cuda_ordinal, bool is_pinned, bool is_dla = false);
 
   // Keeps allocators per ep device in factory so they can be shared across sessions.
   std::unordered_map<uint32_t, std::unique_ptr<CUDAAllocator>> cuda_gpu_allocators;  // device id -> allocator
   std::unordered_map<uint32_t, std::unique_ptr<CUDAPinnedAllocator>> cuda_pinned_allocators;
+  std::unordered_map<uint32_t, std::unique_ptr<CUDAPinnedAllocator>> cuda_dla_allocators;
 
  private:
   static const char* ORT_API_CALL GetNameImpl(const OrtEpFactory* this_ptr) noexcept;
@@ -125,8 +126,13 @@ struct TensorrtExecutionProviderFactory : public OrtEpFactory, public ApiPtrs {
 
   // Per-physical-device cache. The key includes the CUDA ordinal to distinguish
   // identical GPUs (same PCI vendor/device ID) on multi-GPU hosts.
+  std::mutex allocator_mutex_;
   std::mutex device_cache_mutex_;
   std::unordered_map<HardwareDeviceKey, DeviceCacheEntry, HardwareDeviceKeyHasher> device_cache_;
+
+  // DLA memory is cached by CUDA ordinal independently of ORT GPU discovery.
+  // Entries remain alive for the lifetime of the factory, like the GPU cache.
+  std::unordered_map<int, Ort::MemoryInfo> dla_memory_infos_;
 
   // Ordinal-to-HardwareDeviceKey mapping built during GetSupportedDevicesImpl.
   std::unordered_map<int, HardwareDeviceKey> ordinal_to_device_key_;

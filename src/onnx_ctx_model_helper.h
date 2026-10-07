@@ -34,6 +34,7 @@ class EPContextNodeHelper : public ApiPtrs {
                                  const int64_t embed_mode,
                                  const std::string& compute_capability,
                                  const std::string& onnx_model_path,
+                                 int trt_version,
                                  OrtNode** ep_context_node);
 
  private:
@@ -73,7 +74,12 @@ class EPContextNodeReader : public ApiPtrs {
         detailed_build_log_(detailed_build_log) {
   }
 
-  static bool GraphHasCtxNode(const OrtGraph* graph, const OrtApi& ort_api);
+  // Checks node ownership for capability discovery and context loading.
+  // On success, is_context_node reports whether TensorRT can claim the node;
+  // API failures and malformed source metadata are returned as an error status.
+  static OrtStatus* IsTensorRTContextNode(const OrtNode* node, const OrtApi& ort_api, bool& is_context_node);
+
+  static OrtStatus* GraphHasCtxNode(const OrtGraph* graph, const OrtApi& ort_api, bool& has_context_node);
 
   OrtStatus* ValidateEPCtxNode(const OrtGraph* graph) const;
 

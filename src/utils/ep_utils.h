@@ -24,6 +24,7 @@ struct ApiPtrs {
 namespace trt_ep {
 
 constexpr uint32_t kNvidiaVendorId = 0x10DE;
+constexpr uint32_t kNvidiaNpuVendorId = 0x4144564E;  // ACPI "NVDA", NVIDIA DLA/NPU
 
 #define ENFORCE(condition, ...)                          \
   do {                                                   \

@@ -74,6 +74,23 @@ cmake --build ./ --config Release
 | `onnxruntime_ep_tensorrt_BUILD_TESTS` | `OFF` | Build unit tests (requires GTest, fetched automatically). |
 | `onnxruntime_ep_tensorrt_OBJECT_CACHE` | `ON` | Use sccache/ccache if available. |
 
+### Windows Runtime Deployment
+
+On Windows, the build and install steps stage the TensorRT runtime DLLs next
+to `onnxruntime_ep_tensorrt.dll`. Deploy that complete directory. The EP loads
+dependencies from its own directory first, so the executable can reside
+elsewhere and no TensorRT `PATH` entry is required for a complete package.
+If a DLL is absent, the loader falls back to the normal Windows search path.
+An existing DLL that fails to load reports the attempted path and Windows error.
+
+Windows ARM64 DLA also requires `nvdla_compiler.dll` from the selected TensorRT
+SDK and `cudla.dll` from the matching DTK EP package. Set
+`-DCUDLA_DLL_PATH=/path/to/NV_TENSORRT_ARM64_EP_PACKAGE/cudla.dll` to stage cuDLA;
+CMake also checks standard sibling package layouts. Missing cuDLA produces a
+configuration warning, and a DLA session fails if the runtime cannot be loaded.
+The compiler and cuDLA are preloaded only for DLA sessions. DLA transform DLLs
+are not included.
+
 ## Usage
 
 The plugin EP follows the ORT EP plugin ABI workflow:
@@ -202,7 +219,54 @@ onnxruntime_perf_test \
   -r 1 path/to/model.onnx
 ```
 
+## DLA Device Selection
+
+DLA requires an ONNX Runtime SDK and runtime exposing **ORT API 27 or later**.
+Set `ORT_HOME` to that SDK when building; the default ORT 1.25 package supports
+GPU execution only. Build against the SDK matching the runtime you deploy.
+The platform must expose an NVIDIA NPU device (ACPI vendor `NVDA`) through ORT
+hardware discovery and a single CUDA-visible GPU. ORT does not need to report
+that GPU as a hardware device: DLA resolves CUDA ordinal `0` directly and caches
+its memory info independently of the GPU device cache. Ambiguous NPU-to-GPU
+associations on multi-GPU systems are not supported.
+
+Select the DLA `OrtEpDevice` explicitly when appending the provider:
+
+```cpp
+std::vector<Ort::ConstEpDevice> dla_devices;
+for (const auto& device : env.GetEpDevices()) {
+  if (std::string(device.EpName()) == "TRTPluginEP" &&
+      device.Device().Type() == OrtHardwareDeviceType_NPU) {
+    dla_devices.push_back(device);
+    break;
+  }
+}
+// Require one selected DLA device before appending the provider.
+session_options.AppendExecutionProvider_V2(env, dla_devices,
+                                          {{"trt_fp16_enable", "1"}, {"trt_dla_core", "0"}});
+```
+
+The DLA device supplies `trt_dla_enable=1` and its associated CUDA `device_id`
+as defaults. Explicit overrides must agree with the selected device. DLA uses
+raw `cudaMallocHost` allocation for NPU `HOST_ACCESSIBLE` tensors; no EP arena
+is enabled. GPU devices retain their existing raw CUDA allocator.
+
+Models must be supported by TensorRT's DLA backend. External DLA graph
+transforms are not integrated. CUDA graph capture is rejected for DLA sessions.
+The `TensorrtDlaTest.*` tests cover discovery, pinned allocations, repeated
+inference, and invalid options. They require DLA hardware and skip when no DLA
+device is available.
+
 ## Provider Options
+
+When built against TensorRT **11.4 or newer**, the EP uses strongly typed
+networks for both GPU and DLA. The legacy `trt_fp16_enable`, `trt_int8_enable`,
+and `trt_bf16_enable` options are accepted but ignored. If any is enabled, the
+EP logs a warning during session creation with the TensorRT build version and
+the disabled option names. Precision must be expressed through ONNX tensor
+types and explicit quantization; INT8 calibration tables and layer precision
+overrides are not used in these builds. This policy is selected from the SDK
+headers at compilation, including SDK variants with the same version number.
 
 Provider options are passed as key-value string pairs when creating a session. These are the same options supported by the legacy in-tree TensorRT EP.
 
@@ -247,6 +311,36 @@ Provider options are passed as key-value string pairs when creating a session. T
 | `trt_onnx_model_folder_path` | string | `""` | Path to original ONNX model folder (for weight-stripped engine). |
 | `trt_engine_hw_compatible` | bool | `0` | Build HW-compatible engine. |
 | `trt_op_types_to_exclude` | string | `""` | Op types to exclude from TRT acceleration. |
+
+## EPContext Models
+
+GPU and DLA sessions can save compiled TensorRT engines in an EPContext model.
+Configure generation with the generic ORT session settings:
+
+```cpp
+session_options.AddConfigEntry("ep.context_enable", "1");
+session_options.AddConfigEntry("ep.context_embed_mode", "1");
+session_options.AddConfigEntry("ep.context_file_path", "deploy/model_ctx.onnx");
+```
+
+Create the output directory before creating the session. Mode `1` embeds the engine
+in the model. Mode `0` writes an external engine and records a path relative to the
+context model, preserving any `trt_engine_cache_path` subdirectory. Move the model
+and external engine directory together. Generation requires static input shapes
+or explicit TensorRT shape profiles.
+
+To reload, create a session from the saved model and select the same GPU or DLA
+EP device and provider options. Leave `ep.context_enable` disabled. When loading
+an external context from memory, set `ep.context_file_path` to its model location
+so the EP can resolve engine paths. Embedded contexts need no external engine cache.
+
+Generic settings override corresponding legacy `trt_dump_ep_context_model`,
+`trt_ep_context_embed_mode`, and `trt_ep_context_file_path` options. Unspecified
+settings retain the legacy values; the default embedding mode remains `0`.
+
+The `GpuAndDla/TensorrtContextTest.*` tests cover both storage modes, relocation,
+memory loading, cached-engine embedding, context metadata, and foreign EP ownership.
+DLA tests require ORT API 27 or later and an available DLA device.
 
 ## Building and Running Tests
 

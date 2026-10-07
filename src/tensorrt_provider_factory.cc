@@ -2,6 +2,7 @@
 #include "tensorrt_execution_provider.h"
 #include "tensorrt_execution_provider_kernel_registration.h"
 #include "cuda_allocator.h"
+#include "windows_dependency_loader.h"
 
 #include <gsl/gsl>
 #include <cassert>
@@ -122,12 +123,18 @@ const char* ORT_API_CALL TensorrtExecutionProviderFactory::GetVersionImpl(const 
   return factory->ep_version_.c_str();
 }
 
-const OrtMemoryInfo* TensorrtExecutionProviderFactory::GetMemoryInfoByOrdinal(int cuda_ordinal, bool is_pinned) {
+const OrtMemoryInfo* TensorrtExecutionProviderFactory::GetMemoryInfoByOrdinal(int cuda_ordinal, bool is_pinned, bool is_dla) {
+  if (is_dla) {
+    std::lock_guard<std::mutex> lock(device_cache_mutex_);
+    const auto it = dla_memory_infos_.find(cuda_ordinal);
+    if (it == dla_memory_infos_.end()) return nullptr;
+    return it->second;
+  }
   // Get default OrtMemoryInfo from factory's device cache
   const OrtMemoryInfo* mem_info = nullptr;
   auto* cache_entry = FindDeviceCacheEntryByOrdinal(cuda_ordinal);
   if (cache_entry != nullptr) {
-    mem_info = is_pinned ? cache_entry->pinned_memory_info : cache_entry->device_memory_info;  // Ort::MemoryInfo implicitly converts to OrtMemoryInfo*
+    mem_info = is_pinned ? cache_entry->pinned_memory_info : cache_entry->device_memory_info;
   }
   return mem_info;
 }
@@ -307,6 +314,81 @@ OrtStatus* ORT_API_CALL TensorrtExecutionProviderFactory::GetSupportedDevicesImp
     ep_devices[num_ep_devices++] = ep_device_guard.release();
   }
 
+#if ORT_API_VERSION >= 27
+  // Register NVIDIA DLA independently of whether ORT discovered a GPU device.
+  // On Orin/Drive platforms, ORT discovers the DLA accelerator as an NPU with
+  // ACPI vendor "NVDA" (0x4144564E). Register it as a separate EpDevice so
+  // users can select it via PREFER_NPU policy or --filter_ep_devices "device_type|DLA".
+  for (size_t i = 0; i < num_devices && num_ep_devices < max_ep_devices; ++i) {
+    const OrtHardwareDevice& device = *devices[i];
+
+    if (factory->ort_api.HardwareDevice_Type(&device) != OrtHardwareDeviceType_NPU ||
+        factory->ort_api.HardwareDevice_VendorId(&device) != kNvidiaNpuVendorId) {
+      continue;
+    }
+
+    // CUDA ordinals are zero-based. With exactly one visible CUDA device,
+    // ordinal 0 is unambiguous even when ORT hardware discovery omitted it.
+    // No CUDA device, or multiple possible associations, cannot support DLA.
+    if (cuda_device_count != 1) continue;
+    constexpr int dla_cuda_ordinal = 0;
+
+    // DLA tensors use cudaMallocHost memory, registered as NPU HOST_ACCESSIBLE.
+    const OrtMemoryInfo* dla_memory_info = nullptr;
+    {
+      std::lock_guard<std::mutex> lock(factory->device_cache_mutex_);
+      auto it = factory->dla_memory_infos_.try_emplace(dla_cuda_ordinal, nullptr).first;
+      if (!it->second) {
+        it->second = Ort::MemoryInfo{"CudaDLA",
+                                   OrtMemoryInfoDeviceType_NPU,
+                                   kNvidiaNpuVendorId,
+                                   static_cast<uint32_t>(dla_cuda_ordinal),
+                                   OrtDeviceMemoryType_HOST_ACCESSIBLE,
+                                   /*alignment is default*/ 0,
+                                   OrtAllocatorType::OrtDeviceAllocator};
+      }
+      dla_memory_info = it->second;
+    }
+
+    // Stamp ep_metadata so CreateEp can detect this is a DLA device.
+    OrtKeyValuePairs* ep_metadata = nullptr;
+    OrtKeyValuePairs* ep_options  = nullptr;
+    factory->ort_api.CreateKeyValuePairs(&ep_metadata);
+    factory->ort_api.CreateKeyValuePairs(&ep_options);
+    factory->ort_api.AddKeyValuePair(ep_metadata, "device_type",    "DLA");
+    factory->ort_api.AddKeyValuePair(ep_metadata, "cuda_device_id", std::to_string(dla_cuda_ordinal).c_str());
+    factory->ort_api.AddKeyValuePair(ep_options, "device_type",              "DLA");
+    factory->ort_api.AddKeyValuePair(ep_options, "device_id",               std::to_string(dla_cuda_ordinal).c_str());
+    // Default provider options for DLA sessions. AddEpDefaultOptionsToSession only writes
+    // these if the user has not already set them via --plugin_ep_options, so explicit user
+    // overrides are preserved.
+    factory->ort_api.AddKeyValuePair(ep_options, "trt_dla_enable",             "1");
+
+    OrtEpDevice* dla_ep_device = nullptr;
+    auto* status = factory->ort_api.GetEpApi()->CreateEpDevice(
+        factory, &device, ep_metadata, ep_options, &dla_ep_device);
+
+    factory->ort_api.ReleaseKeyValuePairs(ep_metadata);
+    factory->ort_api.ReleaseKeyValuePairs(ep_options);
+
+    if (status != nullptr) {
+      return release_ep_devices(status);
+    }
+
+    auto release_dla_ep_device = [factory](OrtEpDevice* d) {
+      factory->ep_api.ReleaseEpDevice(d);
+    };
+    std::unique_ptr<OrtEpDevice, decltype(release_dla_ep_device)> dla_guard(dla_ep_device, release_dla_ep_device);
+
+    // GetDefaultMemoryDevice selects this slot as DLA session memory.
+    status = factory->ep_api.EpDevice_AddAllocatorInfo(dla_ep_device, dla_memory_info);
+    if (status != nullptr) return release_ep_devices(status);
+
+    ep_devices[num_ep_devices++] = dla_guard.release();
+  }
+
+#endif
+
   return nullptr;
   API_IMPL_END(factory->ort_api)
 }
@@ -314,7 +396,7 @@ OrtStatus* ORT_API_CALL TensorrtExecutionProviderFactory::GetSupportedDevicesImp
 OrtStatus* ORT_API_CALL TensorrtExecutionProviderFactory::CreateEpImpl(
     OrtEpFactory* this_ptr,
     _In_reads_(num_devices) const OrtHardwareDevice* const* /*devices*/,
-    _In_reads_(num_devices) const OrtKeyValuePairs* const* /*ep_metadata*/,
+    _In_reads_(num_devices) const OrtKeyValuePairs* const* ep_metadata,
     _In_ size_t num_devices,
     _In_ const OrtSessionOptions* session_options,
     _In_ const OrtLogger* logger, _Out_ OrtEp** ep) noexcept {
@@ -330,16 +412,26 @@ OrtStatus* ORT_API_CALL TensorrtExecutionProviderFactory::CreateEpImpl(
                                          "TensorRT EP only supports selection for one device.");
   }
 
-  // Create the execution provider
-  RETURN_IF_ERROR(factory->ort_api.Logger_LogMessage(logger,
-                                                     OrtLoggingLevel::ORT_LOGGING_LEVEL_INFO,
-                                                     "Creating TensorRT EP", ORT_FILE, __LINE__, __FUNCTION__));
-
-  // use properties from the device and ep_metadata if needed
-  // const OrtHardwareDevice* device = devices[0];
-  // const OrtKeyValuePairs* ep_metadata = ep_metadata[0];
+  const char* device_type = ep_metadata && ep_metadata[0]
+      ? factory->ort_api.GetKeyValue(ep_metadata[0], "device_type") : nullptr;
+  const bool is_dla_device = device_type && std::strcmp(device_type, "DLA") == 0;
+  RETURN_IF_ERROR(factory->ort_api.Logger_LogMessage(
+      logger, OrtLoggingLevel::ORT_LOGGING_LEVEL_INFO,
+      is_dla_device ? "Creating TensorRT EP (DLA device)" : "Creating TensorRT EP (GPU device)",
+      ORT_FILE, __LINE__, __FUNCTION__));
 
   auto trt_ep = std::make_unique<TensorrtExecutionProvider>(*factory, factory->ep_name_, *session_options, *logger);
+  if (trt_ep->IsDlaEnabled() != is_dla_device) {
+    return factory->ort_api.CreateStatus(ORT_INVALID_ARGUMENT,
+        "trt_dla_enable must match the selected EpDevice; select device_type=DLA for DLA inference");
+  }
+  if (ep_metadata && ep_metadata[0]) {
+    const char* ordinal = factory->ort_api.GetKeyValue(ep_metadata[0], "cuda_device_id");
+    if (ordinal && std::to_string(trt_ep->GetDeviceId()) != ordinal) {
+      return factory->ort_api.CreateStatus(ORT_INVALID_ARGUMENT,
+          "device_id must match the selected EpDevice CUDA ordinal");
+    }
+  }
 
   *ep = trt_ep.release();
   return nullptr;
@@ -375,19 +467,22 @@ OrtStatus* ORT_API_CALL TensorrtExecutionProviderFactory::CreateAllocatorImpl(Or
   auto& factory = *static_cast<TensorrtExecutionProviderFactory*>(this_ptr);
   API_IMPL_BEGIN
 
-  // NOTE: The factory implementation is free to return a shared OrtAllocator* instance instead of creating a new
-  //       allocator on each call. To do this have an allocator instance as an OrtEpFactory class member and make
-  //       ReleaseAllocatorImpl a no-op.
-
-  // NOTE: EP should implement its own arena logic. ep_arena.cc/h is provided as a reference and we use it here for
-  //       device memory. `allocator_options` can be used for arena configuration and there is a helper in ep_arena.h
-  //       to convert from OrtKeyValuePairs to the same arena config settings that ORT uses.
-  //       You are of course free to have completely different settings.
+  std::lock_guard<std::mutex> lock(factory.allocator_mutex_);
 
   const OrtMemoryDevice* mem_device = factory.ep_api.MemoryInfo_GetMemoryDevice(memory_info);
   uint32_t device_id = factory.ep_api.MemoryDevice_GetDeviceId(mem_device);
 
-  if (factory.ep_api.MemoryDevice_GetMemoryType(mem_device) == OrtDeviceMemoryType_DEFAULT) {
+  const auto device_type = factory.ep_api.MemoryDevice_GetDeviceType(mem_device);
+  const auto memory_type = factory.ep_api.MemoryDevice_GetMemoryType(mem_device);
+  if (device_type == OrtMemoryInfoDeviceType_NPU) {
+    if (factory.ep_api.MemoryDevice_GetVendorId(mem_device) != kNvidiaNpuVendorId ||
+        memory_type != OrtDeviceMemoryType_HOST_ACCESSIBLE) {
+      return factory.ort_api.CreateStatus(ORT_INVALID_ARGUMENT, "Invalid DLA allocator memory device");
+    }
+    auto& dla_allocator = factory.cuda_dla_allocators[device_id];
+    if (!dla_allocator) dla_allocator = std::make_unique<CUDAPinnedAllocator>(memory_info);
+    *allocator = dla_allocator.get();
+  } else if (memory_type == OrtDeviceMemoryType_DEFAULT) {
     // use the one that previously created
     if (factory.cuda_gpu_allocators.find(device_id) != factory.cuda_gpu_allocators.end()) {
       *allocator = factory.cuda_gpu_allocators[device_id].get();
@@ -543,6 +638,9 @@ EXPORT_SYMBOL OrtStatus* CreateEpFactories(const char* registration_name, const 
 
   try {
     int cuda_device_count = 0;
+    // Resolve delay-linked TensorRT DLLs before any TensorRT entry point,
+    // including the optional test-harness builder created below.
+    trt_ep::EnsureTensorRtDependenciesLoaded();
     const cudaError_t cuda_err = cudaGetDeviceCount(&cuda_device_count);
     if (cuda_err != cudaSuccess) {
       // CUDA API failure (e.g., driver not loaded, version mismatch) is a hard error.

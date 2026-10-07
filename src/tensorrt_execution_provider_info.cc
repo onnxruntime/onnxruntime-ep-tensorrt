@@ -158,6 +158,9 @@ TensorrtExecutionProviderInfo TensorrtExecutionProviderInfo::FromProviderOptions
               })
           .AddAssignmentToReference(tensorrt::provider_option_names::kExternalDataBytestreamSize, info.external_data_bytestream_size)
           .AddAssignmentToReference(tensorrt::provider_option_names::kOpTypesToExclude, info.op_types_to_exclude)
+          .AddValueParser("device_type", [](const std::string&) -> OrtStatus* {
+            return nullptr;  // EpDevice routing metadata, not a TensorRT builder option.
+          })
           .Parse(options));  // add new provider option here.
 
 #if !((NV_TENSORRT_MAJOR == 10 && NV_TENSORRT_MINOR >= 11) || NV_TENSORRT_MAJOR > 10)
@@ -170,6 +173,19 @@ TensorrtExecutionProviderInfo TensorrtExecutionProviderInfo::FromProviderOptions
   if (info.dla_adjust_for_dla) {
     throw std::runtime_error(
         "trt_dla_adjust_for_dla=true requires TensorRT 10.16 or later");
+  }
+#endif
+
+  if (info.dla_core < 0) throw std::runtime_error("trt_dla_core must be non-negative");
+#if ORT_API_VERSION < 27
+  if (info.dla_enable) throw std::runtime_error("DLA requires a build with ORT API 27 or later");
+#endif
+  if (info.dla_enable && info.cuda_graph_enable) {
+    throw std::runtime_error("trt_cuda_graph_enable is not supported with DLA");
+  }
+#if NV_TENSORRT_MAJOR < 11
+  if (info.dla_enable && !info.fp16_enable && !info.int8_enable) {
+    throw std::runtime_error("DLA requires trt_fp16_enable or trt_int8_enable with TensorRT versions before 11");
   }
 #endif
 

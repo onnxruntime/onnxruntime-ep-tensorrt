@@ -239,7 +239,8 @@ class TensorrtBasicTest : public ::testing::Test {
     auto all_ep_devices = env_->GetEpDevices();
     std::vector<Ort::ConstEpDevice> selected_devices;
     for (const auto& ep_device : all_ep_devices) {
-      if (std::string(ep_device.EpName()) == ep_registration_name_) {
+      if (std::string(ep_device.EpName()) == ep_registration_name_ &&
+          ep_device.Device().Type() == OrtHardwareDeviceType_GPU) {
         selected_devices.push_back(ep_device);
         break;
       }

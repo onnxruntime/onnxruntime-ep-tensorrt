@@ -14,9 +14,10 @@
 #include <NvInferRuntime.h>
 #include <NvOnnxParser.h>
 
-// TensorRT 11.4 and newer use the EP's strongly typed path. Precision comes
-// from the ONNX graph; legacy FP16/BF16/INT8 builder modes are disabled.
-#if NV_TENSORRT_MAJOR > 11 || (NV_TENSORRT_MAJOR == 11 && NV_TENSORRT_MINOR >= 4)
+// TensorRT 11.3 and newer removed the legacy precision builder flags
+// (kFP16/kBF16/kINT8). Use the EP's strongly typed path instead, where precision
+// comes from the ONNX graph and the builder flags are not available.
+#if NV_TENSORRT_MAJOR > 11 || (NV_TENSORRT_MAJOR == 11 && NV_TENSORRT_MINOR >= 3)
 #define ORT_TENSORRT_STRONGLY_TYPED
 #endif
 

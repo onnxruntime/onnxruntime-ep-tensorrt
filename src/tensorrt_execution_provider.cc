@@ -1739,7 +1739,7 @@ OrtStatus* TensorrtExecutionProvider::CreateNodeComputeInfoFromGraph(OrtEp* this
         trt_config->setDLACore(dla_core_);
 #if NV_TENSORRT_MAJOR >= 11 && !defined(ORT_TENSORRT_STRONGLY_TYPED)
         // Retain the DLA FP16 workaround for older TensorRT 11 builds only.
-        // TensorRT 11.4+ takes precision from the graph and removes this flag.
+        // TensorRT 11.3+ takes precision from the graph and removes this flag.
 #if defined(_MSC_VER)
 #pragma warning(push)
 #pragma warning(disable : 4996)
@@ -2993,14 +2993,14 @@ TensorrtExecutionProvider::TensorrtExecutionProvider(TensorrtExecutionProviderFa
   }
 
   // Keep accepting legacy precision options for API compatibility. In a build
-  // against TensorRT 11.4+ they remain disabled, including for DLA; model tensor
+  // against TensorRT 11.3+ they remain disabled, including for DLA; model tensor
   // types and explicit quantization determine precision instead.
 #if defined(ORT_TENSORRT_STRONGLY_TYPED)
   if (info_.fp16_enable || info_.bf16_enable || info_.int8_enable) {
     const std::string message = "[TensorRT EP] Built with TensorRT " +
         std::to_string(NV_TENSORRT_MAJOR) + "." + std::to_string(NV_TENSORRT_MINOR) + "." +
         std::to_string(NV_TENSORRT_PATCH) + "." + std::to_string(NV_TENSORRT_BUILD) +
-        " (>= 11.4): trt_fp16_enable, trt_int8_enable, and trt_bf16_enable are disabled for this build and will be ignored. Precision must be expressed by the ONNX graph.";
+        " (>= 11.3): trt_fp16_enable, trt_int8_enable, and trt_bf16_enable are disabled for this build and will be ignored. Precision must be expressed by the ONNX graph.";
     Ort::ThrowOnError(ort_api.Logger_LogMessage(&logger_,
                                                 OrtLoggingLevel::ORT_LOGGING_LEVEL_WARNING,
                                                 message.c_str(), ORT_FILE, __LINE__, __FUNCTION__));
